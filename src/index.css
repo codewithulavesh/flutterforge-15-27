@@ -1,0 +1,2018 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --ff-bg: #0e1418;
+    --ff-surface: #151d22;
+    --ff-surface-2: #1d292f;
+    --ff-border: #303e44;
+    --ff-border-hover: #46575e;
+    --ff-text: #f2f5f3;
+    --ff-text-muted: #b2c0c2;
+    --ff-text-dim: #91a1a4;
+    --ff-primary: #26bac1;
+    --ff-primary-hover: #42cbd0;
+    --ff-primary-dim: #173a3e;
+    --ff-success: #10b981;
+    --ff-warning: #f59e0b;
+    --ff-error: #ef4444;
+    /* Brand palette (single source of truth) */
+    --ff-brand-teal: #02AFB9;
+    --ff-brand-teal-hover: #0296A0;
+    --ff-brand-coral: #F07067;
+    --ff-brand-coral-hover: #D9574E;
+    --ff-brand-peach: #FED8B7;
+    --ff-brand-deep: #0381A8;
+    --ff-brand-cream: #FBFADD;
+    --ff-brand-ink: #0B3542;
+
+    /* RGB companions for Tailwind opacity modifiers (bg-muted/50 etc.). */
+    --ff-bg-rgb: 14 20 24;
+    --ff-surface-rgb: 21 29 34;
+    --ff-surface-2-rgb: 29 41 47;
+    --ff-border-rgb: 48 62 68;
+    --ff-text-rgb: 242 245 243;
+    --ff-text-muted-rgb: 178 192 194;
+    --ff-text-dim-rgb: 145 161 164;
+    --ff-primary-rgb: 38 186 193;
+    --ff-error-rgb: 239 68 68;
+  }
+
+  [data-theme="light"], .light {
+    color-scheme: light;
+    --ff-bg: #ffffff;
+    --ff-surface: #f8fafc;
+    --ff-surface-2: #f1f5f9;
+    --ff-border: #e2e8f0;
+    --ff-border-hover: #cbd5e1;
+    --ff-text: #0f172a;
+    --ff-text-muted: #64748b;
+    --ff-text-dim: #94a3b8;
+    --ff-primary: #3b82f6;
+    --ff-primary-hover: #2563eb;
+    --ff-primary-dim: #dbeafe;
+    --ff-success: #10b981;
+    --ff-warning: #f59e0b;
+    --ff-error: #ef4444;
+
+    --ff-bg-rgb: 255 255 255;
+    --ff-surface-rgb: 248 250 252;
+    --ff-surface-2-rgb: 241 245 249;
+    --ff-border-rgb: 226 232 240;
+    --ff-text-rgb: 15 23 42;
+    --ff-text-muted-rgb: 100 116 139;
+    --ff-text-dim-rgb: 148 163 184;
+    --ff-primary-rgb: 59 130 246;
+    --ff-error-rgb: 239 68 68;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  [data-theme="light"] body, .light body {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
+  /* Light theme: make hardcoded white text visible on light backgrounds */
+  [data-theme="light"] h1.text-white,
+  [data-theme="light"] h2.text-white,
+  [data-theme="light"] h3.text-white,
+  [data-theme="light"] h4.text-white,
+  [data-theme="light"] p.text-white,
+  [data-theme="light"] span.text-white,
+  [data-theme="light"] div.text-white,
+  [data-theme="light"] section .text-white,
+  [data-theme="light"] main .text-white,
+  [data-theme="light"] header .text-white:not(.bg-\[var\(--ff-primary\)\] *),
+  [data-theme="light"] nav .text-white {
+    color: var(--ff-text) !important;
+  }
+  [data-theme="light"] .text-white\/90 { color: rgb(15 23 42 / 0.9) !important; }
+  [data-theme="light"] .text-white\/80 { color: rgb(15 23 42 / 0.8) !important; }
+  [data-theme="light"] .text-white\/70 { color: rgb(15 23 42 / 0.7) !important; }
+  [data-theme="light"] .text-white\/60 { color: rgb(15 23 42 / 0.6) !important; }
+  /* Keep white on colored/dark overlays */
+  [data-theme="light"] button .text-white,
+  [data-theme="light"] .bg-\[var\(--ff-primary\)\] .text-white,
+  [data-theme="light"] .bg-\[var\(--ff-primary\)\] span.text-white,
+  [data-theme="light"] .bg-blue-500 .text-white,
+  [data-theme="light"] .bg-blue-600 .text-white,
+  [data-theme="light"] .bg-gradient-to-r .text-white,
+  [data-theme="light"] .bg-gradient-to-br .text-white,
+  [data-theme="light"] .bg-black\/60 .text-white,
+  [data-theme="light"] .bg-black .text-white,
+  [data-theme="light"] .bg-black\/30 .text-white,
+  [data-theme="light"] [class*="bg-black"] .text-white {
+    color: white !important;
+  }
+
+  * {
+    border-color: var(--ff-border);
+  }
+
+  html {
+    overflow-x: hidden;
+  }
+
+  /* Lenis owns the scroll position on the landing page; native smooth
+     scrolling would re-animate every frame it writes. */
+  html:not(.lenis) {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--ff-bg);
+    color: var(--ff-text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  img, video, canvas, svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  ::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+  }
+}
+
+@layer components {
+  .ff-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .ff-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .ff-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--ff-border);
+    border-radius: 4px;
+  }
+  .ff-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--ff-border-hover);
+  }
+
+  .ff-card {
+    background-color: var(--ff-surface);
+    border: 1px solid var(--ff-border);
+    border-radius: 12px;
+  }
+
+  .ff-input {
+    background-color: var(--ff-surface-2);
+    border: 1px solid var(--ff-border);
+    border-radius: 8px;
+    color: var(--ff-text);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .ff-input:focus {
+    outline: none;
+    border-color: var(--ff-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .ff-btn-primary {
+    background-color: var(--ff-primary);
+    color: white;
+    transition: background-color 0.15s, transform 0.1s;
+  }
+  .ff-btn-primary:hover {
+    background-color: var(--ff-primary-hover);
+  }
+  .ff-btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .ff-btn-ghost {
+    background-color: transparent;
+    color: var(--ff-text-muted);
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .ff-btn-ghost:hover {
+    background-color: var(--ff-surface-2);
+    color: var(--ff-text);
+  }
+
+  /* ── Brand theme: professional palette, fully toggle-aware ──
+     #02AFB9 teal (primary) · #F07067 coral (accent) · #FED8B7 peach (tint)
+     #0381A8 deep blue (depth) · #FBFADD cream (page)
+     `.ff-brand` follows the global theme toggle (light = cream page,
+     dark = deep-sea page). */
+  .ff-brand {
+    --ff-bg: #FBFADD;
+    --ff-surface: #FFFFFF;
+    --ff-surface-2: #F7EFDA;
+    --ff-border: #E6DAB9;
+    --ff-border-hover: #02AFB9;
+    --ff-text: #0B3542;
+    --ff-text-muted: #476771;
+    --ff-text-dim: #8399A1;
+    --ff-primary: #02AFB9;
+    --ff-primary-hover: #0296A0;
+    --ff-primary-dim: #D3EFF1;
+    --ff-accent: #F07067;
+    --ff-accent-hover: #D9574E;
+    --ff-accent-dim: #FADCD8;
+  }
+
+  /* Dark mode: deep-sea brand variant so the toggle visibly works */
+  [data-theme="dark"] .ff-brand {
+    --ff-bg: #0A3542;
+    --ff-surface: #0E3D4B;
+    --ff-surface-2: #134A5A;
+    --ff-border: rgba(251, 250, 221, 0.14);
+    --ff-border-hover: #02AFB9;
+    --ff-text: #FBFADD;
+    --ff-text-muted: #9DB9C0;
+    --ff-text-dim: #6E8F97;
+    --ff-primary: #02AFB9;
+    --ff-primary-hover: #2BC5CE;
+    --ff-primary-dim: #134A5A;
+    --ff-accent: #F07067;
+    --ff-accent-hover: #FF857B;
+    --ff-accent-dim: #4A2A28;
+  }
+
+  .ff-brand ::selection {
+    background-color: rgba(2, 175, 185, 0.25);
+  }
+
+  .ff-brand .ff-input:focus {
+    border-color: var(--ff-primary);
+    box-shadow: 0 0 0 3px rgba(2, 175, 185, 0.15);
+  }
+
+  /* Light brand: headings/body authored white-on-dark become ink-on-cream… */
+  .ff-brand h1.text-white,
+  .ff-brand h2.text-white,
+  .ff-brand h3.text-white,
+  .ff-brand h4.text-white,
+  .ff-brand p.text-white,
+  .ff-brand span.text-white,
+  .ff-brand div.text-white,
+  .ff-brand input.text-white,
+  .ff-brand section .text-white,
+  .ff-brand main .text-white,
+  .ff-brand header .text-white,
+  .ff-brand nav .text-white {
+    color: var(--ff-text) !important;
+  }
+  /* …but in dark brand mode white stays white */
+  [data-theme="dark"] .ff-brand h1.text-white,
+  [data-theme="dark"] .ff-brand h2.text-white,
+  [data-theme="dark"] .ff-brand h3.text-white,
+  [data-theme="dark"] .ff-brand h4.text-white,
+  [data-theme="dark"] .ff-brand p.text-white,
+  [data-theme="dark"] .ff-brand span.text-white,
+  [data-theme="dark"] .ff-brand div.text-white,
+  [data-theme="dark"] .ff-brand input.text-white,
+  [data-theme="dark"] .ff-brand section .text-white,
+  [data-theme="dark"] .ff-brand main .text-white,
+  [data-theme="dark"] .ff-brand header .text-white,
+  [data-theme="dark"] .ff-brand nav .text-white {
+    color: #FBFADD !important;
+  }
+  .ff-brand .text-white\/90 { color: rgb(11 53 66 / 0.9) !important; }
+  .ff-brand .text-white\/80 { color: rgb(11 53 66 / 0.8) !important; }
+  .ff-brand .text-white\/70 { color: rgb(11 53 66 / 0.7) !important; }
+  .ff-brand .text-white\/60 { color: rgb(11 53 66 / 0.6) !important; }
+  .ff-brand .text-white\/50 { color: rgb(11 53 66 / 0.5) !important; }
+  .ff-brand .text-white\/40 { color: rgb(11 53 66 / 0.4) !important; }
+  .ff-brand .text-white\/30 { color: rgb(11 53 66 / 0.3) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/90 { color: rgb(251 250 221 / 0.9) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/80 { color: rgb(251 250 221 / 0.8) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/70 { color: rgb(251 250 221 / 0.7) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/60 { color: rgb(251 250 221 / 0.6) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/50 { color: rgb(251 250 221 / 0.5) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/40 { color: rgb(251 250 221 / 0.4) !important; }
+  [data-theme="dark"] .ff-brand .text-white\/30 { color: rgb(251 250 221 / 0.3) !important; }
+  .ff-brand .hover\:text-white:hover { color: var(--ff-primary) !important; }
+
+  /* …except white text sitting on brand color / gradients / dark glass */
+  .ff-brand .bg-\[var\(--ff-primary\)\] .text-white,
+  .ff-brand button .text-white,
+  .ff-brand [class*="bg-gradient"] .text-white,
+  .ff-brand [class*="bg-gradient"].text-white,
+  .ff-brand [class*="bg-black"] .text-white,
+  .ff-brand .ff-dark-block .text-white {
+    color: #FFFFFF !important;
+  }
+  .ff-brand .ff-dark-block .hover\:text-white:hover {
+    color: #FFFFFF !important;
+  }
+
+  /* Legacy neon icon tones → readable tones on cream (light) */
+  .ff-brand .text-emerald-300 { color: #047857 !important; }
+  .ff-brand .text-emerald-400 { color: #059669 !important; }
+  .ff-brand .text-red-400 { color: #DC2626 !important; }
+  .ff-brand .text-blue-400 { color: #0381A8 !important; }
+  .ff-brand .text-amber-400 { color: #B45309 !important; }
+  .ff-brand .text-purple-400 { color: #7C3AED !important; }
+  .ff-brand .text-cyan-400 { color: #0E7490 !important; }
+  .ff-brand .text-teal-400 { color: #0F766E !important; }
+  .ff-brand .text-rose-400 { color: #E11D48 !important; }
+  .ff-brand .text-indigo-400 { color: #4F46E5 !important; }
+
+  /* Deep-sea footer grounds the light page; transparent in dark brand */
+  .ff-brand .ff-dark-block {
+    background-color: #0A3542;
+    --ff-border: rgba(251, 250, 221, 0.14);
+    --ff-text-muted: #9DB9C0;
+    --ff-text-dim: #6E8F97;
+  }
+}
+
+@keyframes ff-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ff-fade-in {
+  animation: ff-fade-in 0.3s ease-out;
+}
+
+@keyframes ff-spin {
+  to { transform: rotate(360deg); }
+}
+.ff-spin {
+  animation: ff-spin 0.8s linear infinite;
+}
+
+/* ── Studio theme ─────────────────────────────────────────────────────────────
+   A cream-paper/ink/pastel system inspired by modern campaign editors:
+   thick ink borders, hard offset shadows, uppercase mono labels and a
+   display grotesk. Applied to the product surfaces (dashboard + workspace)
+   while the marketing pages keep the teal brand. */
+.ff-display {
+  font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.045em;
+}
+
+.ff-label {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.ff-studio {
+  --ff-bg: #f3efe4;
+  --ff-surface: #fffdf6;
+  --ff-surface-2: #f8f1df;
+  --ff-border: #171717;
+  --ff-border-hover: #000000;
+  --ff-text: #141414;
+  --ff-text-muted: #4d4a43;
+  --ff-text-dim: #8a857a;
+  --ff-primary: #141414;
+  --ff-primary-hover: #2b2b2b;
+  --ff-primary-dim: #f2d45c;
+  --ff-success: #1f7a5a;
+  --ff-warning: #9a6a00;
+  --ff-error: #b3261e;
+  --ff-studio-yellow: #f2d45c;
+  --ff-studio-mint: #a8e6cf;
+  --ff-studio-lavender: #cdb4f6;
+  --ff-studio-pink: #f6b3c8;
+  --ff-studio-blue: #a9d6e5;
+  --ff-studio-shadow: 4px 4px 0 #171717;
+}
+
+/* Professional dark studio: lifted charcoal layers, readable hairlines and
+  brand teal, with warm yellow retained as a secondary accent. */
+[data-theme="dark"] .ff-studio {
+  --ff-bg: #0e1418;
+  --ff-surface: #151d22;
+  --ff-surface-2: #1d292f;
+  --ff-border: #303e44;
+  --ff-border-hover: #46575e;
+  --ff-text: #f2f5f3;
+  --ff-text-muted: #b2c0c2;
+  --ff-text-dim: #91a1a4;
+  --ff-primary: #26bac1;
+  --ff-primary-hover: #42cbd0;
+  --ff-primary-dim: #173a3e;
+  --ff-success: #4ade80;
+  --ff-warning: #fbbf24;
+  --ff-error: #f87171;
+  --ff-studio-yellow: #f2d45c;
+  --ff-studio-mint: #7dd8b5;
+  --ff-studio-lavender: #b9a4e8;
+  --ff-studio-pink: #e8a2b8;
+  --ff-studio-blue: #8fc7db;
+  --ff-studio-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="dark"] .ff-studio .ff-card {
+  border-width: 1px;
+  box-shadow: var(--ff-studio-shadow);
+}
+
+[data-theme="dark"] .ff-studio .ff-btn-primary {
+  border-color: var(--ff-studio-yellow);
+  box-shadow: 3px 3px 0 #000000;
+}
+
+[data-theme="dark"] .ff-studio .ff-btn-primary:hover {
+  box-shadow: 5px 5px 0 #000000;
+}
+
+[data-theme="dark"] .ff-studio .ff-btn-primary:active {
+  box-shadow: 1px 1px 0 #000000;
+}
+
+[data-theme="dark"] .ff-studio .ff-input:focus {
+  box-shadow: 0 0 0 3px rgba(242, 212, 92, 0.18);
+}
+
+[data-theme="dark"] .ff-studio-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+}
+
+[data-theme="dark"] .ff-studio-badge {
+  background: var(--ff-studio-yellow);
+  color: #141414;
+}
+
+.ff-studio .ff-card {
+  border: 1.5px solid var(--ff-border);
+  border-radius: 14px;
+  box-shadow: var(--ff-studio-shadow);
+  background-color: var(--ff-surface);
+}
+
+.ff-studio .ff-input {
+  border: 1.5px solid var(--ff-border);
+  border-radius: 10px;
+  background-color: var(--ff-surface);
+  color: var(--ff-text);
+}
+
+.ff-studio .ff-input:focus {
+  border-color: var(--ff-border);
+  box-shadow: 3px 3px 0 var(--ff-border);
+}
+
+.ff-studio .ff-btn-primary {
+  background-color: var(--ff-primary);
+  color: var(--ff-bg);
+  border: 1.5px solid var(--ff-border);
+  box-shadow: 3px 3px 0 var(--ff-studio-yellow);
+  border-radius: 10px;
+}
+
+[data-theme="dark"] .ff-studio .ff-btn-primary {
+  color: #151515;
+}
+
+.ff-studio .ff-btn-primary:hover {
+  background-color: var(--ff-primary-hover);
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--ff-studio-yellow);
+}
+
+.ff-studio .ff-btn-primary:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ff-studio-yellow);
+}
+
+.ff-studio .ff-btn-ghost {
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+}
+
+.ff-studio .ff-btn-ghost:hover {
+  border-color: var(--ff-border);
+  background-color: var(--ff-surface-2);
+}
+
+.ff-studio .ff-card-hover:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ff-border);
+}
+
+.ff-studio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1.5px solid var(--ff-border);
+  border-radius: 999px;
+  background: var(--ff-studio-yellow, #f2d45c);
+  color: #141414;
+  padding: 0.15rem 0.55rem;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ff-studio-grid {
+  background-image:
+    linear-gradient(to right, rgba(20, 20, 20, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(20, 20, 20, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ── Landing polish: professional depth, motion and brand glow ─────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.lenis) {
+    scroll-behavior: auto;
+  }
+}
+
+.ff-studio {
+  --ff-soft-shadow: 0 1px 2px rgba(20, 20, 20, 0.05), 0 16px 40px -16px rgba(20, 20, 20, 0.18);
+  --ff-soft-shadow-lg: 0 2px 4px rgba(20, 20, 20, 0.05), 0 32px 64px -24px rgba(20, 20, 20, 0.24);
+  --ff-glow-teal: 0 0 0 1px rgba(2, 175, 185, 0.18), 0 12px 40px -12px rgba(2, 175, 185, 0.35);
+}
+
+[data-theme="dark"] .ff-studio {
+  --ff-soft-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 16px 40px -12px rgba(0, 0, 0, 0.5);
+  --ff-soft-shadow-lg: 0 1px 0 rgba(255, 255, 255, 0.05), 0 32px 72px -20px rgba(0, 0, 0, 0.6);
+  --ff-glow-teal: 0 0 0 1px rgba(2, 175, 185, 0.22), 0 16px 56px -16px rgba(2, 175, 185, 0.4);
+}
+
+/* Teal gradient CTA — professional, works on cream and charcoal */
+.ff-cta {
+  background: linear-gradient(135deg, #02afb9 0%, #0381a8 100%);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(2, 175, 185, 0.35), 0 8px 24px -8px rgba(2, 175, 185, 0.55);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s ease;
+}
+.ff-cta:hover {
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(2, 175, 185, 0.35), 0 14px 32px -8px rgba(2, 175, 185, 0.6);
+}
+.ff-cta:active {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+/* Gradient ink for headline accents */
+.ff-gradient-text {
+  background: linear-gradient(120deg, #02afb9 10%, #0381a8 60%, #0b3542 110%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+[data-theme="dark"] .ff-studio .ff-gradient-text {
+  background: linear-gradient(120deg, #2bc5ce 10%, #7dd8b5 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Ambient hero light */
+.ff-hero-glow {
+  background: radial-gradient(closest-side, rgba(2, 175, 185, 0.16), rgba(2, 175, 185, 0.05) 55%, transparent 75%);
+  filter: blur(12px);
+}
+[data-theme="dark"] .ff-hero-glow {
+  background: radial-gradient(closest-side, rgba(2, 175, 185, 0.2), rgba(3, 129, 168, 0.07) 55%, transparent 78%);
+}
+
+/* Soft halo behind the product window */
+.ff-window-glow {
+  background: radial-gradient(closest-side, rgba(2, 175, 185, 0.14), transparent 72%);
+  filter: blur(16px);
+}
+[data-theme="dark"] .ff-window-glow {
+  background: radial-gradient(closest-side, rgba(2, 175, 185, 0.16), transparent 75%);
+}
+
+/* Hero entrance: staggered rise-in on load */
+@keyframes ff-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ff-enter {
+  animation: ff-rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Interaction feedback: forging cursor, button spinner, live dot, viewport swap */
+.ff-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 12px;
+  vertical-align: -1px;
+  background: var(--ff-code-ok);
+  animation: ff-blink 1s steps(2, start) infinite;
+}
+@keyframes ff-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.ff-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 1.5px solid rgb(255 255 255 / 0.35);
+  border-top-color: currentColor;
+  animation: ff-spin 0.7s linear infinite;
+}
+@keyframes ff-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ff-live-dot {
+  animation: ff-live 2s ease-in-out infinite;
+}
+@keyframes ff-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.ff-swap {
+  animation: ff-swap-in 0.28s ease-out both;
+}
+@keyframes ff-swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Scroll reveal (driven by IntersectionObserver) */
+.ff-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.ff-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero headline: each line rises out of a printed mask. */
+.ff-line-clip {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.1em;
+  margin-bottom: -0.1em;
+}
+.ff-line {
+  display: block;
+  transform: translateY(110%);
+  animation: ff-line-up 0.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes ff-line-up {
+  to {
+    transform: none;
+  }
+}
+
+/* Hero plate lands like a printed sheet on the desk. */
+@keyframes ff-settle {
+  from {
+    opacity: 0;
+    transform: translateY(16px) rotate(-0.4deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ff-settle {
+  animation: ff-settle 0.95s cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+/* Hairlines draw themselves when their Reveal enters view. */
+.ff-reveal .ff-rule-draw {
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.12s;
+}
+.ff-reveal.is-visible .ff-rule-draw {
+  transform: scaleX(1);
+}
+
+/* Build-log lines type in as a stage advances. */
+.ff-log-line {
+  animation: ff-log-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes ff-log-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Process tape: a slow press-run between chapters. */
+.ff-tape {
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.ff-tape-track {
+  animation: ff-tape-run 88s linear infinite;
+  will-change: transform;
+}
+.ff-tape:hover .ff-tape-track {
+  animation-play-state: paused;
+}
+@keyframes ff-tape-run {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* FAQ answers unfold instead of snapping open. */
+.ff-faq-answer {
+  animation: ff-unfold 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes ff-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* CTA field: the dot grid drifts like the sheet is being fed through.
+   Animated with transform (compositor) instead of background-position (paint). */
+.ff-cta-field {
+  overflow: hidden;
+}
+.ff-cta-grid {
+  position: absolute;
+  inset: -26px;
+  animation: ff-grid-drift 26s linear infinite;
+  will-change: transform;
+}
+@keyframes ff-grid-drift {
+  to {
+    transform: translate3d(26px, 26px, 0);
+  }
+}
+
+/* Gentle float for badges */
+@keyframes ff-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.ff-float {
+  animation: ff-float 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-enter,
+  .ff-float,
+  .ff-settle,
+  .ff-cursor,
+  .ff-spinner,
+  .ff-live-dot,
+  .ff-swap,
+  .ff-log-line,
+  .ff-faq-answer,
+  .ff-cta-grid,
+  .ff-tape-track {
+    animation: none;
+  }
+  .ff-line {
+    animation: none;
+    transform: none;
+  }
+  .ff-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .ff-reveal .ff-rule-draw {
+    transform: none;
+    transition: none;
+  }
+  .ff-tape {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
+
+/* ── Landing dark mode: balanced charcoal with teal accents ──────────────────
+   Scoped to the landing page (ff-landing) so product surfaces elsewhere keep
+   the studio palette. */
+[data-theme="dark"] .ff-studio.ff-landing {
+  --ff-bg: #10191d;
+  --ff-surface: #182429;
+  --ff-surface-2: #223238;
+  --ff-border: rgba(177, 205, 206, 0.18);
+  --ff-border-hover: rgba(38, 186, 193, 0.58);
+  --ff-text: #f2f6f3;
+  --ff-text-muted: #b7c6c7;
+  --ff-text-dim: #91a6a8;
+  --ff-primary: #02afb9;
+  --ff-primary-hover: #2bc5ce;
+  --ff-primary-dim: rgba(2, 175, 185, 0.14);
+  --ff-bg-rgb: 16 25 29;
+  --ff-surface-rgb: 24 36 41;
+  --ff-surface-2-rgb: 34 50 56;
+  --ff-border-rgb: 55 73 79;
+  --ff-text-rgb: 242 246 243;
+  --ff-text-muted-rgb: 183 198 199;
+  --ff-text-dim-rgb: 145 166 168;
+  --ff-primary-rgb: 2 175 185;
+  --ff-soft-shadow: 0 1px 0 rgba(230, 245, 242, 0.04), 0 20px 48px -24px rgba(0, 0, 0, 0.55);
+  --ff-soft-shadow-lg: 0 1px 0 rgba(230, 245, 242, 0.05), 0 28px 64px -30px rgba(0, 0, 0, 0.65);
+  --ff-glow-teal: 0 0 0 1px rgba(2, 175, 185, 0.2), 0 14px 40px -20px rgba(2, 175, 185, 0.3);
+}
+
+/* CTAs glow harder at night */
+[data-theme="dark"] .ff-landing .ff-cta {
+  box-shadow:
+    0 0 0 1px rgba(2, 175, 185, 0.25),
+    0 10px 24px -12px rgba(2, 175, 185, 0.42),
+    0 0 22px -10px rgba(2, 175, 185, 0.24);
+}
+
+/* Eyebrow pill turns into a teal glass chip */
+[data-theme="dark"] .ff-landing .ff-eyebrow {
+  background: rgba(2, 175, 185, 0.08);
+  border-color: rgba(2, 175, 185, 0.3);
+  box-shadow: 0 0 24px -10px rgba(2, 175, 185, 0.55);
+}
+
+/* Prompt bar: glass with a luminous focus ring */
+[data-theme="dark"] .ff-landing .ff-prompt {
+  background: rgba(24, 36, 41, 0.94);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 0 1px rgba(177, 205, 206, 0.1), 0 20px 48px -24px rgba(0, 0, 0, 0.6);
+}
+[data-theme="dark"] .ff-landing .ff-prompt:focus-within {
+  border-color: rgba(2, 175, 185, 0.55);
+  box-shadow: var(--ff-glow-teal);
+}
+
+/* Product window picks up a teal halo */
+[data-theme="dark"] .ff-landing .ff-window {
+  border-color: rgba(177, 205, 206, 0.2);
+  box-shadow: var(--ff-soft-shadow-lg), 0 0 72px -48px rgba(2, 175, 185, 0.35);
+}
+
+/* Compile badge: teal glass instead of studio yellow */
+[data-theme="dark"] .ff-landing .ff-compile-badge {
+  background: rgba(2, 175, 185, 0.16);
+  border-color: rgba(2, 175, 185, 0.45);
+  box-shadow: 0 0 28px -8px rgba(2, 175, 185, 0.6);
+  backdrop-filter: blur(8px);
+}
+[data-theme="dark"] .ff-landing .ff-compile-badge svg,
+[data-theme="dark"] .ff-landing .ff-compile-badge span {
+  color: #a8e6cf;
+}
+
+/* Proof strip: faint teal sheen from above */
+[data-theme="dark"] .ff-landing .ff-proof {
+  background:
+    radial-gradient(ellipse 70% 120% at 50% -20%, rgba(2, 175, 185, 0.07), transparent 70%),
+    var(--ff-surface);
+}
+
+/* CTA panel: layered teal light on deep glass */
+[data-theme="dark"] .ff-landing .ff-cta-panel {
+  background:
+    radial-gradient(ellipse 55% 70% at 85% 15%, rgba(2, 175, 185, 0.1), transparent 70%),
+    radial-gradient(ellipse 45% 60% at 8% 90%, rgba(3, 129, 168, 0.08), transparent 70%),
+    linear-gradient(165deg, #182429 0%, #1b2b30 100%);
+  border-color: rgba(177, 205, 206, 0.2);
+  box-shadow:
+    0 0 0 1px rgba(177, 205, 206, 0.06),
+    0 28px 64px -30px rgba(0, 0, 0, 0.65),
+    0 0 64px -44px rgba(2, 175, 185, 0.3);
+}
+
+/* Dark-only ambient orbs (invisible on the cream light theme) */
+.ff-orb {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(56px);
+}
+.ff-orb-coral { background: radial-gradient(circle, rgba(240, 112, 103, 0.17), transparent 70%); }
+.ff-orb-lavender { background: radial-gradient(circle, rgba(185, 164, 232, 0.15), transparent 70%); }
+.ff-orb-deep { background: radial-gradient(circle, rgba(3, 129, 168, 0.2), transparent 70%); }
+[data-theme="dark"] .ff-landing .ff-orb {
+  opacity: 1;
+}
+
+/* Boosted ambient light in dark mode */
+[data-theme="dark"] .ff-landing .ff-hero-glow {
+  background: radial-gradient(closest-side, rgba(2, 175, 185, 0.26), rgba(3, 129, 168, 0.1) 55%, transparent 78%);
+}
+[data-theme="dark"] .ff-landing .ff-window-glow {
+  background: radial-gradient(closest-side, rgba(2, 175, 185, 0.2), rgba(3, 129, 168, 0.08) 55%, transparent 78%);
+  filter: blur(20px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="dark"] .ff-landing .ff-orb {
+    transition: none;
+  }
+}
+
+/* Landing page build pipeline: a restrained 3D source artifact stack. */
+.ff-artifact-well {
+  position: relative;
+  min-height: 310px;
+  background:
+    radial-gradient(ellipse at 52% 44%, rgba(2, 175, 185, 0.12), transparent 58%),
+    linear-gradient(rgba(20, 20, 20, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 20, 20, 0.035) 1px, transparent 1px),
+    var(--ff-surface-2);
+  background-size: auto, 22px 22px, 22px 22px, auto;
+}
+.ff-artifact-scene {
+  position: relative;
+  width: 190px;
+  height: 190px;
+  perspective: 780px;
+  transform-style: preserve-3d;
+  animation: ff-artifact-float 7s ease-in-out infinite;
+}
+.ff-artifact-card {
+  position: absolute;
+  width: 166px;
+  height: 112px;
+  border: 1px solid var(--ff-border);
+  border-radius: 11px;
+  padding: 13px;
+  background: var(--ff-surface);
+  box-shadow: 0 14px 24px -18px rgba(0, 0, 0, .48);
+  transform-style: preserve-3d;
+}
+.ff-artifact-card-back {
+  left: 17px;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  opacity: .52;
+  transform: rotateY(-18deg) rotateX(7deg) translate3d(5px, 0, -36px);
+}
+.ff-artifact-card-mid {
+  left: 10px;
+  top: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: color-mix(in srgb, var(--ff-surface) 90%, var(--ff-brand-teal));
+  transform: rotateY(-18deg) rotateX(7deg) translate3d(0, 0, 2px);
+}
+.ff-artifact-card-front {
+  left: 3px;
+  top: 52px;
+  z-index: 2;
+  height: 124px;
+  background: var(--ff-surface);
+  transform: rotateY(-18deg) rotateX(7deg) translate3d(0, 0, 44px);
+  transition: transform .5s cubic-bezier(.2,.8,.2,1), box-shadow .5s ease;
+}
+.ff-artifact-scene:hover .ff-artifact-card-front {
+  transform: rotateY(-12deg) rotateX(3deg) translate3d(-3px, -5px, 56px);
+  box-shadow: 0 24px 38px -20px rgba(0, 0, 0, .55);
+}
+.ff-artifact-card-front > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--ff-brand-teal);
+  font: 8px/1.4 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+}
+.ff-artifact-card-front > div:first-child span { overflow: hidden; text-overflow: ellipsis; }
+.ff-artifact-card-front p { margin-top: 14px; color: var(--ff-text); font-size: 11px; font-weight: 650; }
+.ff-artifact-card-front small { display: block; margin-top: 3px; color: var(--ff-text-dim); font-size: 7px; line-height: 1.4; }
+.ff-artifact-folder { color: var(--ff-brand-teal); font: 8px 'JetBrains Mono', ui-monospace, monospace; }
+.ff-artifact-line { display: block; height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--ff-text-dim) 22%, transparent); }
+.ff-artifact-dot { width: 7px; height: 7px; border-radius: 50%; background: #7dd8b5; }
+.ff-artifact-progress { position: absolute; right: 13px; bottom: 13px; left: 13px; height: 2px; overflow: hidden; border-radius: 99px; background: var(--ff-border); }
+.ff-artifact-progress i { display: block; width: 64%; height: 100%; border-radius: inherit; background: var(--ff-brand-teal); }
+.ff-artifact-shadow { position: absolute; top: 151px; left: 22px; width: 138px; height: 27px; border-radius: 50%; background: rgba(10, 20, 25, .2); filter: blur(15px); transform: rotateX(70deg) translateZ(-30px); }
+@keyframes ff-artifact-float { 0%, 100% { transform: rotateZ(-1deg) translateY(0); } 50% { transform: rotateZ(1deg) translateY(-5px); } }
+[data-theme="dark"] .ff-artifact-well {
+  background:
+    radial-gradient(ellipse at 52% 44%, rgba(2, 175, 185, 0.17), transparent 58%),
+    linear-gradient(rgba(180, 220, 225, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 220, 225, 0.045) 1px, transparent 1px),
+    var(--ff-surface-2);
+  background-size: auto, 22px 22px, 22px 22px, auto;
+}
+[data-theme="dark"] .ff-artifact-shadow { background: rgba(0, 0, 0, .65); }
+@media (prefers-reduced-motion: reduce) {
+  .ff-artifact-scene { animation: none; }
+  .ff-artifact-card-front { transition: none; }
+}
+
+.ff-scroll-trace-grid {
+  opacity: .48;
+  background-image:
+    linear-gradient(rgba(20, 20, 20, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 20, 20, .035) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(90deg, transparent, black 25%, black 82%, transparent);
+}
+.ff-scroll-trace-glow {
+  background: radial-gradient(ellipse 45% 75% at 77% 48%, rgba(2, 175, 185, .075), transparent 75%);
+}
+.ff-trace-card {
+  transition: transform .3s cubic-bezier(.2,.8,.2,1), border-color .3s ease, box-shadow .3s ease;
+}
+.ff-trace-card:hover {
+  transform: perspective(900px) translate3d(-3px, -2px, 10px) rotateX(1deg);
+  border-color: color-mix(in srgb, var(--ff-brand-teal) 42%, var(--ff-border));
+  box-shadow: var(--ff-soft-shadow-lg);
+}
+[data-theme="dark"] .ff-scroll-trace-grid {
+  opacity: .3;
+  background-image:
+    linear-gradient(rgba(180, 220, 225, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 220, 225, .055) 1px, transparent 1px);
+}
+[data-theme="dark"] .ff-scroll-trace-glow {
+  background: radial-gradient(ellipse 45% 75% at 77% 48%, rgba(2, 175, 185, .12), transparent 75%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ff-trace-card { transition: none; }
+  .ff-trace-card:hover { transform: none; }
+}
+
+/* ── Editorial landing shell ──────────────────────────────────────────────────
+   A printed-studio system: warm paper, ink rules, one functional teal, a serif
+   accent for voice, and mono annotations. No gradient ink, no floating orbs. */
+.ff-landing.ff-studio {
+  --ff-bg: #f7f2e4;
+  --ff-surface: #fffdf6;
+  --ff-surface-2: #efe8d6;
+  --ff-border: #e0d6bf;
+  --ff-border-hover: #0b3542;
+  --ff-text: #10241f;
+  --ff-text-muted: #4a625f;
+  --ff-text-dim: #617873;
+  --ff-primary: #08666d;
+  --ff-primary-hover: #0a7c84;
+  --ff-primary-dim: #dcebe4;
+  --ff-rule: rgba(16, 36, 31, 0.16);
+  --ff-rule-strong: rgba(16, 36, 31, 0.34);
+  --ff-accent-ink: #08666d;
+  --ff-code-bg: #0f1a1c;
+  --ff-code-surface: #152427;
+  --ff-code-text: #d9e4df;
+  --ff-code-dim: #78908d;
+  --ff-code-key: #7ad3d1;
+  --ff-code-string: #dcc384;
+  --ff-code-error: #f08a80;
+  --ff-code-ok: #8ad9b8;
+  --ff-panel-bg: #0b3542;
+  --ff-panel-text: #fbfadd;
+  --ff-panel-muted: #a5c0c4;
+  --ff-mat-line: rgba(16, 36, 31, 0.07);
+  --ff-mat-line-strong: rgba(16, 36, 31, 0.13);
+  --ff-serif: 'Instrument Serif', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+}
+
+[data-theme="dark"] .ff-landing.ff-studio {
+  --ff-bg: #10191d;
+  --ff-surface: #162227;
+  --ff-surface-2: #1d2d33;
+  --ff-border: rgba(177, 205, 206, 0.18);
+  --ff-border-hover: rgba(38, 186, 193, 0.58);
+  --ff-text: #f2f6f3;
+  --ff-text-muted: #b7c6c7;
+  --ff-text-dim: #91a6a8;
+  --ff-primary: #2bc5ce;
+  --ff-primary-hover: #5fd6d6;
+  --ff-primary-dim: rgba(2, 175, 185, 0.14);
+  --ff-rule: rgba(242, 246, 243, 0.14);
+  --ff-rule-strong: rgba(242, 246, 243, 0.3);
+  --ff-accent-ink: #5fd6d6;
+  --ff-code-bg: #0b1416;
+  --ff-code-surface: #101d20;
+  --ff-code-text: #d9e4df;
+  --ff-code-dim: #78908d;
+  --ff-code-key: #7ad3d1;
+  --ff-code-string: #dcc384;
+  --ff-code-error: #f08a80;
+  --ff-code-ok: #8ad9b8;
+  --ff-panel-bg: #0a2c36;
+  --ff-panel-text: #f4f7f2;
+  --ff-panel-muted: #9db9c0;
+  --ff-mat-line: rgba(242, 246, 243, 0.05);
+  --ff-mat-line-strong: rgba(242, 246, 243, 0.1);
+}
+
+.ff-serif {
+  font-family: var(--ff-serif);
+  font-weight: 400;
+  letter-spacing: -0.018em;
+}
+
+.ff-kicker {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ff-text-dim);
+}
+
+.ff-rule {
+  border-color: var(--ff-rule);
+}
+
+/* Drafting sheet: a quiet dot field, not a gradient wash. */
+.ff-draft-grid {
+  isolation: isolate;
+}
+/* Dots sit behind the artwork so the fade never washes out the content. */
+.ff-draft-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(circle, var(--ff-rule) 1px, transparent 1.2px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.55) 55%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, rgba(0, 0, 0, 0.55) 55%, transparent 92%);
+  pointer-events: none;
+}
+
+/* ── Cutting mat ─────────────────────────────────────────────────────────────
+   The work surface the plates rest on: a gridded plane in perspective with
+   registration crosses, drifting a few pixels with the pointer. */
+.ff-mat {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  perspective: 780px;
+  perspective-origin: 50% 100%;
+  pointer-events: none;
+}
+.ff-mat-plane {
+  position: absolute;
+  left: 50%;
+  bottom: -14%;
+  width: 176%;
+  height: 104%;
+  transform-origin: 50% 100%;
+  transform: translate3d(calc(-50% + var(--pt-x, 0) * 26px), calc(var(--pt-y, 0) * 8px), 0) rotateX(63deg);
+  background-image:
+    linear-gradient(to right, var(--ff-mat-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--ff-mat-line) 1px, transparent 1px),
+    linear-gradient(to right, var(--ff-mat-line-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--ff-mat-line-strong) 1px, transparent 1px);
+  background-size:
+    56px 56px,
+    56px 56px,
+    280px 280px,
+    280px 280px;
+  background-position: center bottom;
+  mask-image: linear-gradient(to top, black 10%, rgba(0, 0, 0, 0.72) 48%, transparent 94%);
+  -webkit-mask-image: linear-gradient(to top, black 10%, rgba(0, 0, 0, 0.72) 48%, transparent 94%);
+}
+/* Registration crosses printed on the mat. */
+.ff-mat-cross {
+  position: absolute;
+  height: 17px;
+  width: 17px;
+  opacity: 0.55;
+}
+.ff-mat-cross::before,
+.ff-mat-cross::after {
+  content: '';
+  position: absolute;
+  background: var(--ff-rule-strong);
+}
+.ff-mat-cross::before {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.ff-mat-cross::after {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* ── Plate stack ─────────────────────────────────────────────────────────────
+   Each artifact is the top sheet of a small stack, and lifts in 3D with the
+   pointer like paper being inspected on the mat. */
+.ff-plate-stack {
+  position: relative;
+}
+.ff-sheet {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--ff-rule-strong);
+  border-radius: 10px;
+  background: var(--ff-surface);
+  pointer-events: none;
+}
+.ff-sheet-1 {
+  transform: translate(9px, 11px);
+}
+.ff-sheet-2 {
+  transform: translate(19px, 23px);
+  opacity: 0.7;
+}
+.ff-plate-stage {
+  perspective: 1500px;
+  perspective-origin: 50% 28%;
+}
+.ff-plate-tilt {
+  position: relative;
+  transform-style: preserve-3d;
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .ff-plate-tilt {
+    /* Position is eased in JS, so the transform tracks every frame without a lagging transition. */
+    transform: rotateX(calc(var(--pt-y, 0) * -3deg)) rotateY(calc(var(--pt-x, 0) * 4.4deg));
+  }
+  .ff-sheet {
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ff-plate-stack:hover .ff-sheet-1 {
+    transform: translate(12px, 14px);
+  }
+  .ff-plate-stack:hover .ff-sheet-2 {
+    transform: translate(24px, 29px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ff-mat-plane {
+    transform: translate3d(-50%, 0, 0) rotateX(63deg);
+  }
+  .ff-plate-tilt {
+    transform: none;
+    transition: none;
+  }
+  .ff-sheet {
+    transition: none;
+  }
+}
+@media (max-width: 639px) {
+  .ff-mat {
+    opacity: 0.6;
+  }
+  .ff-mat-cross {
+    display: none;
+  }
+  .ff-sheet-1 {
+    transform: translate(6px, 8px);
+  }
+  .ff-sheet-2 {
+    display: none;
+  }
+}
+
+/* Primary action: ink on paper, teal only as feedback. */
+.ff-ink-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid var(--ff-text);
+  border-radius: 6px;
+  background: var(--ff-text);
+  color: var(--ff-bg);
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ff-ink-button:hover {
+  background: var(--ff-accent-ink);
+  border-color: var(--ff-accent-ink);
+  color: #ffffff;
+}
+.ff-ink-button:active {
+  transform: translateY(1px);
+}
+[data-theme="dark"] .ff-landing .ff-ink-button:hover {
+  color: #062022;
+}
+
+/* Secondary action: a ruled outline that picks up the accent on hover. */
+.ff-outline-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid var(--ff-rule-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ff-text);
+  font-weight: 600;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    background-color 0.18s ease;
+}
+.ff-outline-button:hover {
+  border-color: var(--ff-accent-ink);
+  color: var(--ff-accent-ink);
+  background: color-mix(in srgb, var(--ff-accent-ink) 6%, transparent);
+}
+
+/* Framed artifact: thin plate border and a small corner index. */
+.ff-plate {
+  position: relative;
+  border: 1px solid var(--ff-border);
+  border-radius: 10px;
+  background: var(--ff-surface);
+  box-shadow: 0 1px 2px rgba(16, 36, 31, 0.04), 0 24px 48px -40px rgba(16, 36, 31, 0.35);
+}
+[data-theme="dark"] .ff-landing .ff-plate {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 28px 64px -40px rgba(0, 0, 0, 0.8);
+}
+
+.ff-code-surface {
+  background: var(--ff-code-bg);
+  color: var(--ff-code-text);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+.ff-code-key { color: var(--ff-code-key); }
+.ff-code-string { color: var(--ff-code-string); }
+.ff-code-dim { color: var(--ff-code-dim); }
+
+/* Code plates stay dark in light mode, so their grey scale must stay white. */
+.ff-landing .ff-code-surface .text-white { color: #ffffff !important; }
+.ff-landing .ff-code-surface .text-white\/90 { color: rgb(255 255 255 / 0.9) !important; }
+.ff-landing .ff-code-surface .text-white\/85 { color: rgb(255 255 255 / 0.85) !important; }
+.ff-landing .ff-code-surface .text-white\/70 { color: rgb(255 255 255 / 0.7) !important; }
+.ff-landing .ff-code-surface .text-white\/50 { color: rgb(255 255 255 / 0.5) !important; }
+.ff-landing .ff-code-surface .text-white\/45 { color: rgb(255 255 255 / 0.45) !important; }
+.ff-landing .ff-code-surface .text-white\/40 { color: rgb(255 255 255 / 0.4) !important; }
+.ff-landing .ff-code-surface .text-white\/35 { color: rgb(255 255 255 / 0.35) !important; }
+.ff-landing .ff-code-surface .text-white\/30 { color: rgb(255 255 255 / 0.3) !important; }
+
+/* Long-form index rows: rules do the work, no cards. */
+.ff-index-row {
+  border-top: 1px solid var(--ff-rule);
+  transition: background-color 0.2s ease;
+}
+.ff-index-row:last-child {
+  border-bottom: 1px solid var(--ff-rule);
+}
+.ff-index-row:hover {
+  background: color-mix(in srgb, var(--ff-accent-ink) 4%, transparent);
+}
+
+/* Quiet link with a drawn underline. */
+.ff-text-link {
+  position: relative;
+  color: var(--ff-text-muted);
+  transition: color 0.18s ease;
+}
+.ff-text-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ff-text-link:hover {
+  color: var(--ff-text);
+}
+.ff-text-link:hover::after {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-ink-button,
+  .ff-outline-button,
+  .ff-text-link,
+  .ff-text-link::after {
+    transition: none;
+  }
+}
+
+/* ── Dock navbar accents ───────────────────────────────────────────────────── */
+.dock .ff-dock-start .dock-face {
+  background: linear-gradient(135deg, #02afb9 0%, #0381a8 100%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 4px 14px -4px rgba(2, 175, 185, 0.65);
+}
+.dock .ff-dock-start .dock-face:active,
+.dock .ff-dock-start[data-open] .dock-face {
+  filter: brightness(0.92);
+}
+
+/* ── Bold campaign landing ───────────────────────────────────────────────────
+   A second marketing surface: light gray canvas, condensed black display
+   type, floating pill navigation and saturated product cards. Scoped to
+   `.ff-bold` so the studio and editorial landing keep their own palettes. */
+.ff-bold {
+  --fb-bg: #f2f2f2;
+  --fb-ink: #050505;
+  --fb-muted: #5b5b5b;
+  --fb-dim: #6e6e6e;
+  --fb-card: #ffffff;
+  --fb-line: rgba(5, 5, 5, 0.12);
+  --fb-soft: rgba(5, 5, 5, 0.05);
+  --fb-lime: #adff02;
+  --fb-magenta: #fa00ff;
+  --fb-cyan: #02bbff;
+  --fb-orange: #ff5a36;
+  --fb-danger: #b3261e;
+  background: var(--fb-bg);
+  color: var(--fb-ink);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-theme='dark'] .ff-bold {
+  --fb-bg: #0e0b0f;
+  --fb-ink: #f7f5ef;
+  --fb-muted: #ada8b3;
+  --fb-dim: #807b87;
+  --fb-card: #17141b;
+  --fb-line: rgba(255, 255, 255, 0.14);
+  --fb-soft: rgba(255, 255, 255, 0.07);
+  --fb-danger: #ff8a8a;
+}
+
+/* The studio theme remaps `.text-white` to dark ink in light mode. Inside
+   the bold landing, white text only ever sits on dark surfaces, so restore
+   the literal colour for this scope. */
+[data-theme='light'] .ff-bold .text-white { color: #ffffff !important; }
+[data-theme='light'] .ff-bold .text-white\/90 { color: rgba(255, 255, 255, 0.9) !important; }
+[data-theme='light'] .ff-bold .text-white\/80 { color: rgba(255, 255, 255, 0.8) !important; }
+[data-theme='light'] .ff-bold .text-white\/70 { color: rgba(255, 255, 255, 0.7) !important; }
+[data-theme='light'] .ff-bold .text-white\/65 { color: rgba(255, 255, 255, 0.65) !important; }
+[data-theme='light'] .ff-bold .text-white\/60 { color: rgba(255, 255, 255, 0.6) !important; }
+[data-theme='light'] .ff-bold .text-white\/55 { color: rgba(255, 255, 255, 0.55) !important; }
+[data-theme='light'] .ff-bold .text-white\/45 { color: rgba(255, 255, 255, 0.45) !important; }
+[data-theme='light'] .ff-bold .text-white\/40 { color: rgba(255, 255, 255, 0.4) !important; }
+
+/* Product primitives inside the bold scope (dashboard + workspace). The
+   landing page does not use these classes, so remapping the shared tokens
+   here only retints the product chrome. */
+.ff-bold {
+  --ff-bg: var(--fb-bg);
+  --ff-surface: var(--fb-card);
+  --ff-surface-2: var(--fb-soft);
+  --ff-border: var(--fb-line);
+  --ff-border-hover: var(--fb-ink);
+  --ff-text: var(--fb-ink);
+  --ff-text-muted: var(--fb-muted);
+  --ff-text-dim: var(--fb-dim);
+  --ff-primary: var(--fb-ink);
+  --ff-primary-hover: var(--fb-ink);
+  --ff-primary-dim: var(--fb-soft);
+}
+
+.ff-bold .ff-card {
+  border: 1px solid var(--fb-line);
+  border-radius: 20px;
+  background-color: var(--fb-card);
+  box-shadow: none;
+}
+.ff-bold .ff-card h2 {
+  font-family: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 900;
+  font-stretch: 75%;
+  font-variation-settings: 'wdth' 75;
+  letter-spacing: -0.02em;
+}
+
+.ff-bold .ff-input {
+  border: 1px solid var(--fb-line);
+  border-radius: 12px;
+  background-color: var(--fb-soft);
+  color: var(--fb-ink);
+}
+.ff-bold .ff-input::placeholder {
+  color: var(--fb-dim);
+}
+.ff-bold .ff-input:focus {
+  border-color: var(--fb-ink);
+  box-shadow: 0 0 0 3px rgba(5, 5, 5, 0.08);
+}
+[data-theme='dark'] .ff-bold .ff-input:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+
+.ff-bold .ff-btn-primary {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background-color: var(--fb-ink);
+  color: var(--fb-bg);
+}
+.ff-bold .ff-btn-primary:hover {
+  background-color: var(--fb-ink);
+  opacity: 0.88;
+}
+.ff-bold .ff-btn-primary:active {
+  transform: scale(0.98);
+}
+.ff-bold .ff-btn-primary:disabled {
+  background-color: var(--fb-soft);
+  color: var(--fb-muted);
+  opacity: 1;
+}
+.ff-bold .ff-btn-ghost {
+  border-radius: 999px;
+}
+.ff-bold .ff-btn-ghost:hover {
+  background-color: var(--fb-soft);
+  color: var(--fb-ink);
+}
+
+.ff-bold .text-red-400 {
+  color: #c81e1e;
+}
+[data-theme='dark'] .ff-bold .text-red-400 {
+  color: #ff6b6b;
+}
+
+/* Tailwind semantic utilities (bg-background, text-muted-foreground, …) read
+   opaque RGB triplets rather than the `--ff-*` colours above. The workspace
+   and its AI Elements chat are built from those utilities, so mirror the bold
+   palette here to keep the chat surfaces in the same visual system. */
+.ff-bold {
+  --ff-bg-rgb: 242 242 242;
+  --ff-surface-rgb: 255 255 255;
+  --ff-surface-2-rgb: 239 239 239;
+  --ff-border-rgb: 227 227 227;
+  --ff-text-rgb: 5 5 5;
+  --ff-text-muted-rgb: 91 91 91;
+  --ff-text-dim-rgb: 110 110 110;
+  --ff-primary-rgb: 5 5 5;
+  --ff-error-rgb: 179 38 30;
+}
+
+[data-theme='dark'] .ff-bold {
+  --ff-bg-rgb: 14 11 15;
+  --ff-surface-rgb: 23 20 27;
+  --ff-surface-2-rgb: 32 29 36;
+  --ff-border-rgb: 51 47 52;
+  --ff-text-rgb: 247 245 239;
+  --ff-text-muted-rgb: 173 168 179;
+  --ff-text-dim-rgb: 128 123 135;
+  --ff-primary-rgb: 247 245 239;
+  --ff-error-rgb: 255 138 138;
+}
+
+/* In dark mode "primary" is paper-white; anything painted on it needs ink. */
+[data-theme='dark'] .ff-bold .bg-primary {
+  color: var(--fb-bg);
+}
+
+/* Workbench grid: the faint plotted paper behind editor-only surfaces. */
+.ffb-workspace-grid {
+  background-image:
+    linear-gradient(to right, rgba(5, 5, 5, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(5, 5, 5, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+[data-theme='dark'] .ffb-workspace-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+/* Helvetica Now Condensed substitute: Archivo variable width at 900. */
+.ffb-display {
+  font-family: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-weight: 900;
+  font-stretch: 75%;
+  font-variation-settings: 'wdth' 75;
+  letter-spacing: -0.035em;
+  line-height: 0.9;
+}
+.ffb-caps {
+  text-transform: uppercase;
+  /* Archivo's condensed word space collapses under negative tracking on
+     big display lines ("YOURIDE", "AREAL"). Restore a readable gap. */
+  word-spacing: 0.07em;
+}
+
+.ffb-code-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+}
+
+/* Printed halftone wash used on the saturated cards. */
+.ffb-dots {
+  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.4) 0.9px, transparent 1.1px);
+  background-size: 5px 5px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 72%);
+}
+
+.ffb-phone {
+  border: 8px solid #0a0a0a;
+  border-radius: 40px;
+  background: #0a0a0a;
+  box-shadow:
+    0 40px 80px -46px rgba(0, 0, 0, 0.75),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+@media (min-width: 640px) {
+  .ffb-phone {
+    border-width: 10px;
+    border-radius: 46px;
+  }
+}
+
+.ffb-float {
+  animation: ffb-float 7s ease-in-out infinite;
+}
+.ffb-float-late {
+  animation-delay: -3.6s;
+}
+@keyframes ffb-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-4deg);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(-1.5deg);
+  }
+}
+
+.ffb-reveal {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+  transition:
+    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ffb-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.ffb-faq summary {
+  list-style: none;
+}
+.ffb-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.ff-bold :focus-visible {
+  outline: 2px solid var(--fb-ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.ff-bold .ffb-dark :focus-visible {
+  outline-color: #ffffff;
+}
+
+.ffb-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.ffb-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ffb-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+/* The card title is a stretched link; surface its focus ring on the card. */
+.ff-bold .ffb-project-card:has(h3 button:focus-visible) {
+  outline: 2px solid var(--fb-ink);
+  outline-offset: 3px;
+}
+.ff-bold .ffb-project-card h3 button:focus-visible {
+  outline: none;
+}
+
+/* ── Folder project cards ────────────────────────────────────────────────────
+   A saturated gradient leaf slides behind a die-cut folder front. The front
+   is split into three layers (body, tab, concave fillet) so the silhouette
+   keeps its curve at any card width. */
+.ffb-folder {
+  --folder-front: #121214;
+  --folder-frame: var(--fb-ink);
+  --fold-top: 58%;
+  --fold-rise: 26px;
+  --fold-tab: 61%;
+  --fold-r: 16px;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 15 / 16;
+  min-height: 240px;
+  padding: 6px;
+  border-radius: 26px;
+  background: var(--folder-frame);
+  transition:
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.35s ease;
+}
+[data-theme='dark'] .ffb-folder {
+  --folder-front: #151219;
+  --folder-frame: rgba(255, 255, 255, 0.22);
+}
+@media (hover: hover) {
+  .ffb-folder:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 30px 52px -36px rgba(0, 0, 0, 0.85);
+  }
+}
+.ffb-folder-inner {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--folder-front);
+}
+.ffb-folder-art,
+.ffb-folder-front,
+.ffb-folder-tab,
+.ffb-folder-fillet {
+  position: absolute;
+  pointer-events: none;
+}
+.ffb-folder-art {
+  inset: 0;
+}
+.ffb-folder-front {
+  inset: var(--fold-top) 0 0;
+  background: var(--folder-front);
+}
+.ffb-folder-tab {
+  left: 0;
+  top: calc(var(--fold-top) - var(--fold-rise));
+  width: var(--fold-tab);
+  height: calc(var(--fold-rise) + 2px);
+  border-top-right-radius: var(--fold-r);
+  background: var(--folder-front);
+}
+.ffb-folder-fillet {
+  left: var(--fold-tab);
+  top: calc(var(--fold-top) - var(--fold-r));
+  width: var(--fold-r);
+  height: var(--fold-r);
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent calc(var(--fold-r) - 0.5px),
+    var(--folder-front) var(--fold-r)
+  );
+}
+.ffb-folder-label-space {
+  height: calc(var(--fold-top) - var(--fold-rise) + 10px);
+}
+/* Keep the white title on the black tab, never on the gradient. */
+.ffb-folder-title {
+  max-width: calc(var(--fold-tab) - 30px);
+}
+.ff-bold .ffb-folder-actions:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+.ffb-folder-numeral {
+  font-family: var(--ff-serif);
+  font-style: italic;
+  font-size: 38px;
+  line-height: 0.8;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+/* Saturated stock picks — one per folder, chosen from the project id. */
+.ffb-fold-0 {
+  background-image:
+    radial-gradient(62% 72% at 82% 16%, rgba(255, 255, 255, 0.42), transparent 62%),
+    linear-gradient(128deg, #ffb37c 0%, #ff6a2b 48%, #ff2d00 100%);
+}
+.ffb-fold-1 {
+  background-image:
+    radial-gradient(64% 74% at 82% 30%, rgba(255, 255, 255, 0.55), transparent 62%),
+    radial-gradient(70% 80% at 10% 4%, rgba(83, 56, 255, 0.5), transparent 68%),
+    linear-gradient(128deg, #6a55ff 0%, #9d8bff 48%, #ded8ff 100%);
+}
+.ffb-fold-2 {
+  background-image:
+    radial-gradient(62% 72% at 84% 18%, rgba(255, 255, 255, 0.5), transparent 62%),
+    linear-gradient(128deg, #64ccff 0%, #2f74ff 52%, #0a2bff 100%);
+}
+.ffb-fold-3 {
+  background-image:
+    radial-gradient(62% 72% at 82% 14%, rgba(255, 255, 255, 0.55), transparent 62%),
+    linear-gradient(128deg, #d9ff65 0%, #adff02 54%, #4f9a00 100%);
+}
+.ffb-fold-4 {
+  background-image:
+    radial-gradient(64% 74% at 18% 10%, rgba(255, 255, 255, 0.4), transparent 62%),
+    linear-gradient(128deg, #ffb1f7 0%, #fa00ff 52%, #7a00c9 100%);
+}
+.ffb-fold-5 {
+  background-image:
+    radial-gradient(62% 72% at 84% 18%, rgba(255, 255, 255, 0.5), transparent 62%),
+    linear-gradient(128deg, #9af4ff 0%, #02bbff 52%, #0060b3 100%);
+}
+
+/* Loading stand-in keeps the folder silhouette while projects resolve. */
+.ffb-folder-skel-art {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--fold-top);
+  background: rgba(255, 255, 255, 0.07);
+}
+.ffb-folder-skel-label {
+  position: absolute;
+  left: 16px;
+  top: calc(var(--fold-top) - var(--fold-rise) + 13px);
+  width: 44%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.ffb-folder-skel-sub {
+  position: absolute;
+  left: 16px;
+  top: calc(var(--fold-top) + 7px);
+  width: 30%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.ffb-folder-skel-num {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 54px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.ffb-folder-skel-meta {
+  position: absolute;
+  right: 16px;
+  bottom: 21px;
+  width: 62px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Auth surfaces ───────────────────────────────────────────────────────────
+   The poster panel reuses the landing's condensed display type over a dark
+   drafting grid; the account form sits on a paper card with mono field
+   labels so it reads as the same product, not a separate template. */
+.ffb-auth-poster {
+  background: var(--fb-bg);
+}
+.ffb-auth-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(5, 5, 5, 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(5, 5, 5, 0.055) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(120% 95% at 30% 12%, #000 0%, transparent 80%);
+  -webkit-mask-image: radial-gradient(120% 95% at 30% 12%, #000 0%, transparent 80%);
+}
+[data-theme='dark'] .ffb-auth-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+}
+
+.ffb-auth-card {
+  overflow: hidden;
+  border: 1px solid var(--fb-line);
+  border-radius: 26px;
+  background: var(--fb-card);
+  box-shadow: 0 30px 70px -56px rgba(0, 0, 0, 0.65);
+}
+[data-theme='dark'] .ffb-auth-card {
+  box-shadow: 0 30px 70px -56px rgba(0, 0, 0, 0.9);
+}
+
+.ffb-auth-card label {
+  display: block;
+  margin-bottom: 8px;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fb-muted);
+}
+.ffb-auth-card .ff-input {
+  height: 46px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 16px;
+}
+@media (min-width: 640px) {
+  .ffb-auth-card .ff-input {
+    font-size: 13.5px;
+  }
+}
+
+.ffb-auth-alert,
+.ffb-auth-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid;
+  border-radius: 14px;
+  padding: 11px 13px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.ffb-auth-alert {
+  border-color: rgba(179, 38, 30, 0.3);
+  background: rgba(179, 38, 30, 0.07);
+  color: var(--fb-danger);
+}
+.ffb-auth-success {
+  border-color: rgba(79, 154, 0, 0.35);
+  background: rgba(173, 255, 2, 0.12);
+  color: #3d6600;
+}
+[data-theme='dark'] .ffb-auth-alert {
+  border-color: rgba(255, 138, 138, 0.28);
+  background: rgba(255, 138, 138, 0.08);
+}
+[data-theme='dark'] .ffb-auth-success {
+  border-color: rgba(173, 255, 2, 0.26);
+  background: rgba(173, 255, 2, 0.08);
+  color: #d9ff7a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ffb-float {
+    animation: none;
+  }
+  .ffb-folder {
+    transition: none;
+  }
+  .ffb-folder:hover {
+    transform: none;
+  }
+  .ffb-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

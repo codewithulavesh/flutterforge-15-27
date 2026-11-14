@@ -1,0 +1,1083 @@
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  AlertCircle,
+  ArrowRight,
+  ChevronDown,
+  Copy,
+  FileCode2,
+  FolderOpen,
+  MessageSquare,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Wrench,
+  X,
+} from 'lucide-react';
+import { SkillRegistry } from '@/agent/skills';
+import { SkillsModal } from '@/features/workspace/SkillsModal';
+import { useProjectStore, type SendMessageOptions } from '@/stores/project.store';
+import { usePreviewStore } from '@/stores/preview.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useTerminalStore } from '@/stores/terminal.store';
+import { useActivityStore } from '@/stores/activity.store';
+import { classifyChatIntent } from '@/agent/chatIntent';
+import type { ModelPreference } from '@/agent/modelRouting';
+import { useCredentialsStore } from '@/stores/credentials.store';
+import { ChatContextHandler } from '@/agent/chatContext';
+import { toast } from '@/components/ui/Toast';
+import { BrandLogo } from '@/components/BrandLogo';
+import { RunActivity } from '@/features/workspace/RunActivity';
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton,
+} from '@/components/ai-elements/conversation';
+import {
+  Message,
+  MessageAction,
+  MessageActions,
+  MessageContent,
+  MessageResponse,
+  MessageToolbar,
+} from '@/components/ai-elements/message';
+import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-elements/reasoning';
+import { Suggestion } from '@/components/ai-elements/suggestion';
+import {
+  PromptInput,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuItem,
+  PromptInputActionMenuTrigger,
+  PromptInputBody,
+  PromptInputButton,
+  PromptInputFooter,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputTools,
+} from '@/components/ai-elements/prompt-input';
+import {
+  Confirmation,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationRequest,
+  ConfirmationTitle,
+} from '@/components/ai-elements/confirmation';
+import { Sources, SourcesContent, SourcesTrigger } from '@/components/ai-elements/sources';
+import {
+  InlineCitation,
+  InlineCitationCard,
+  InlineCitationCardBody,
+  InlineCitationCardTrigger,
+  InlineCitationSource,
+  InlineCitationText,
+} from '@/components/ai-elements/inline-citation';
+import { cn } from '@/utils/cn';
+import { OpenRouterKeyModal } from '@/components/OpenRouterKeyModal';
+import { ShareModal } from '@/features/workspace/ShareModal';
+import type { AIMessage, FileChange } from '@/types';
+
+const SUGGESTIONS = [
+  {
+    label: 'Apple-style calculator',
+    prompt: 'Build a colorful calculator app like the Apple Calculator with all basic and scientific functions, a history panel, and keyboard support. Local only — no backend.',
+  },
+  {
+    label: 'Habit tracker',
+    prompt: 'Build a habit streak tracker with daily check-ins, weekly progress rings, reminders, and local persistence. No backend.',
+  },
+  {
+    label: 'Food delivery app',
+    prompt: 'Build a food delivery app with restaurants, menus, cart, checkout, and Supabase auth, orders, and RLS policies.',
+  },
+  {
+    label: 'AI chat assistant',
+    prompt: 'Build an AI chat assistant with conversations, streaming replies, Markdown rendering, and Supabase auth and message history.',
+  },
+];
+
+type PanelVariant = 'sidebar' | 'page';
+
+function shortModel(modelId: string | undefined): string {
+  if (!modelId) return 'FlutterForge Agent';
+  const base = modelId.split('/').pop() || modelId;
+  return base.replace(/:free$/, '').replace(/-/g, ' ');
+}
+
+function timeLabel(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('success', 'Copied to clipboard');
+  } catch {
+    toast('error', 'Could not copy to clipboard');
+  }
+}
+
+function buildStatusMessage(status: string): string {
+  if (status === 'queued' || status === 'building') return 'Preview build started';
+  if (status === 'running') return 'Preview is live';
+  if (status === 'failed') return 'Preview build failed';
+  if (status === 'stopped') return 'Preview build stopped';
+  return 'Preview status changed';
+}
+
+function ChangedFiles({ files, onOpen }: { files: FileChange[]; onOpen: (path: string) => void }) {
+  const unique = files.filter((file, index, list) => (
+    list.findIndex((item) => item.path === file.path) === index
+  ));
+  if (unique.length === 0) return null;
+
+  return (
+    <Sources>
+      <SourcesTrigger count={unique.length}>
+        <InlineCitation>
+          <InlineCitationText>Used {unique.length} project {unique.length === 1 ? 'source' : 'sources'}</InlineCitationText>
+        </InlineCitation>
+        <ChevronDown className="size-4" />
+      </SourcesTrigger>
+      <SourcesContent>
+        {unique.map((file) => (
+          <InlineCitation key={file.path}>
+            <InlineCitationCard>
+              <InlineCitationCardTrigger
+                onClick={() => file.action !== 'deleted' && onOpen(file.path)}
+                sources={[file.path]}
+                title={file.path}
+              />
+              <InlineCitationCardBody>
+                <div className="space-y-2 p-3">
+                  <InlineCitationSource
+                    description={`${file.action} by FlutterForge`}
+                    title={file.path}
+                  />
+                  {file.action !== 'deleted' && (
+                    <button
+                      className="text-xs font-medium text-primary hover:underline"
+                      onClick={() => onOpen(file.path)}
+                      type="button"
+                    >
+                      Open file
+                    </button>
+                  )}
+                </div>
+              </InlineCitationCardBody>
+            </InlineCitationCard>
+          </InlineCitation>
+        ))}
+      </SourcesContent>
+    </Sources>
+  );
+}
+
+function MessageBubble({
+  message,
+  page,
+  onOpen,
+  onRetry,
+  canRetry,
+  onPromptClick,
+  onViewPreview,
+}: {
+  message: AIMessage;
+  page: boolean;
+  onOpen: (path: string) => void;
+  onRetry: () => void;
+  canRetry: boolean;
+  onPromptClick?: (prompt: string) => void;
+  onViewPreview?: () => void;
+}) {
+  const isUser = message.role === 'user';
+  const changedFiles = Array.isArray(message.changed_files) ? message.changed_files : [];
+  const nextActions = Array.isArray((message.metadata as any)?.nextActionPrompts)
+    ? ((message.metadata as any).nextActionPrompts as string[])
+    : [];
+
+  return (
+    <Message className={cn(page ? 'max-w-full' : 'max-w-[94%]')} from={message.role}>
+      {!isUser && (
+        <div className="flex items-center gap-2 px-0.5 text-[11px]">
+          <span className="grid size-6 place-items-center rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)]">
+            <MessageSquare className="size-3 text-[var(--fb-ink)]" />
+          </span>
+          <span className="font-semibold text-[var(--fb-ink)]">FlutterForge</span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--fb-dim)]">{timeLabel(message.created_at)}</span>
+        </div>
+      )}
+      <MessageContent className={cn(
+        page && !isUser && 'w-full',
+        isUser && 'rounded-[18px] border border-[var(--fb-line)] bg-[var(--fb-card)] px-4 py-3',
+      )}>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+        ) : (
+          <MessageResponse>{message.content}</MessageResponse>
+        )}
+        {!isUser && changedFiles.length > 0 && (
+          <div className="mt-2 space-y-2">
+            <ChangedFiles files={changedFiles} onOpen={onOpen} />
+            {onViewPreview && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={onViewPreview}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--fb-ink)] px-3 py-1.5 text-[11px] font-semibold text-[var(--fb-bg)] transition-transform hover:-translate-y-px active:scale-95 shadow-sm"
+                >
+                  <ArrowRight className="size-3 text-[var(--fb-bg)]" />
+                  <span>Open Live Preview</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isUser && nextActions.length > 0 && onPromptClick && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-[var(--fb-line)]/50 pt-2.5">
+            <span className="w-full font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--fb-dim)]">Next steps</span>
+            {nextActions.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => onPromptClick(prompt)}
+                className="group inline-flex items-center gap-1.5 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 text-[11px] text-[var(--fb-ink)] transition-all hover:border-[var(--fb-ink)] hover:bg-[var(--fb-soft)] active:scale-95"
+              >
+                <ArrowRight className="size-3 text-[var(--fb-dim)] transition-all group-hover:translate-x-0.5 group-hover:text-[var(--fb-ink)]" />
+                <span>{prompt}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </MessageContent>
+      {!isUser && (
+        <MessageToolbar className="mt-1">
+          <MessageActions>
+            <MessageAction
+              label="Copy response"
+              onClick={() => void copyText(message.content)}
+              tooltip="Copy"
+            >
+              <Copy className="size-3.5" />
+            </MessageAction>
+            {canRetry && (
+              <MessageAction label="Retry" onClick={onRetry} tooltip="Retry">
+                <RotateCcw className="size-3.5" />
+              </MessageAction>
+            )}
+          </MessageActions>
+        </MessageToolbar>
+      )}
+    </Message>
+  );
+}
+
+export function AIBuilderPanel({ variant = 'sidebar' }: { variant?: PanelVariant }) {
+  const {
+    messages,
+    sendMessage,
+    currentProject,
+    conversation,
+    repairBuild,
+    stopRepair,
+    files,
+    newConversation,
+    generatingIn,
+  } = useProjectStore();
+  const preview = usePreviewStore();
+  const { openFile, activeFile, setActiveView } = useWorkspaceStore();
+  const {
+    isGenerating,
+    isAnswering,
+    generationError,
+    setGenerating,
+    setAnswering,
+    setCurrentPhase,
+    setGenerationError,
+    addLine,
+    addLiveFile,
+    clearLiveFiles,
+  } = useTerminalStore();
+  const activity = useActivityStore();
+
+  const page = variant === 'page';
+  const [input, setInput] = useState('');
+  const [streamingReply, setStreamingReply] = useState('');
+  const [keyModalOpen, setKeyModalOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [elapsed, setElapsed] = useState(0);
+  const [dismissedRepair, setDismissedRepair] = useState<string | null>(null);
+  const [modelPreference, setModelPreference] = useState<ModelPreference>(() => {
+    try {
+      const saved = (typeof localStorage !== 'undefined' ? localStorage.getItem('ff-model-preference') : null);
+      return saved === 'quality' || saved === 'fast' || saved === 'auto' ? saved : 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+
+  const [isSkillsOpen, setIsSkillsOpen] = useState(false);
+  const [activeSkillCount, setActiveSkillCount] = useState(() => SkillRegistry.getActiveSkills().length);
+
+  const busy = isGenerating || isAnswering || generatingIn === currentProject?.id;
+
+  const composerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const sendingRef = useRef(false);
+  const startedAtRef = useRef<number | null>(null);
+  const autoStarted = useRef(false);
+  const autoTimer = useRef<number | null>(null);
+  const buildCursor = useRef<{ sessionId: string | null; logs: number; status: string | null }>({
+    sessionId: null,
+    logs: 0,
+    status: null,
+  });
+  const location = useLocation();
+  const navState = location.state as { initialPrompt?: string; richPrompt?: string } | null;
+
+  const hasMessages = messages.length > 0;
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
+  const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
+  const userMessageCount = messages.filter((message) => message.role === 'user').length;
+  const lastAssistantIndex = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      if (messages[index].role === 'assistant') return index;
+    }
+    return -1;
+  }, [messages]);
+  const showActivity = Boolean(activity.run) || activity.events.length > 0;
+  const modelLabel = shortModel(
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AGENT_MODEL) || undefined,
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ff-model-preference', modelPreference);
+    } catch {
+      // private mode / storage unavailable
+    }
+  }, [modelPreference]);
+
+  useEffect(() => {
+    void useCredentialsStore.getState().load();
+  }, []);
+
+  useEffect(() => {
+    if (currentProject?.id) useActivityStore.getState().load(currentProject.id);
+  }, [currentProject?.id]);
+
+  useEffect(() => {
+    if (!busy) {
+      startedAtRef.current = null;
+      setElapsed(0);
+      return;
+    }
+    if (startedAtRef.current === null) startedAtRef.current = Date.now();
+    const timer = window.setInterval(() => {
+      if (startedAtRef.current !== null) {
+        setElapsed(Math.floor((Date.now() - startedAtRef.current) / 1000));
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
+
+  const buildSession = currentProject ? preview.getSession(currentProject.id) : null;
+
+  useEffect(() => {
+    if (!buildSession) return;
+    const store = useActivityStore.getState();
+    if (buildCursor.current.sessionId !== buildSession.sessionId) {
+      buildCursor.current = { sessionId: buildSession.sessionId, logs: 0, status: null };
+    }
+    const cursor = buildCursor.current;
+    for (let index = cursor.logs; index < buildSession.logs.length; index++) {
+      store.ingestBuildLog(buildSession.logs[index]);
+    }
+    cursor.logs = buildSession.logs.length;
+    if (cursor.status !== buildSession.status) {
+      cursor.status = buildSession.status;
+      const errors = buildSession.logs.filter((line) => (
+        /error|exception|failed to|because|not found|invalid|undefined/i.test(line)
+      ));
+      store.ingestBuildStatus(buildSession.status, buildStatusMessage(buildSession.status), errors);
+    }
+  }, [buildSession?.sessionId, buildSession?.status, buildSession?.logs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const showRepair = Boolean(
+    buildSession
+    && buildSession.status === 'failed'
+    && dismissedRepair !== buildSession.sessionId
+    && !busy,
+  );
+  const repairHint = (buildSession?.logs ?? [])
+    .filter((line) => /error|exception|because|failed to|not found|invalid/i.test(line))
+    .slice(0, 2);
+
+  const contextInfo = useMemo(() => ChatContextHandler.build({
+    projectName: currentProject?.name ?? 'Project',
+    projectDescription: currentProject?.description ?? '',
+    files,
+    messages,
+    activeFile,
+    buildErrors: buildSession?.logs ?? [],
+    question: input || lastUserMessage,
+  }), [currentProject?.name, currentProject?.description, files, messages, activeFile, buildSession?.logs, input, lastUserMessage]);
+
+  const tokenBudget = 12000;
+  const tokenPct = Math.min(100, Math.round((contextInfo.tokenEstimate / tokenBudget) * 100));
+  const tokenLabel = contextInfo.tokenEstimate >= 1000
+    ? `${(contextInfo.tokenEstimate / 1000).toFixed(1)}k`
+    : String(contextInfo.tokenEstimate);
+
+  const focusComposer = () => {
+    composerRef.current?.querySelector('textarea')?.focus();
+  };
+
+  function handleNewChat() {
+    if (!currentProject) return;
+    autoStarted.current = true;
+    void newConversation(currentProject.id).then(() => {
+      useActivityStore.getState().clear();
+      setGenerationError(null);
+      setInput('');
+      setStreamingReply('');
+      focusComposer();
+    }).catch((error) => {
+      toast('error', error instanceof Error ? error.message : 'Could not start a new chat.');
+    });
+  }
+
+  function handleStop() {
+    stopRepair();
+    useProjectStore.setState({ generatingIn: null });
+    abortRef.current?.abort();
+    abortRef.current = null;
+    sendingRef.current = false;
+    setGenerating(false);
+    setAnswering(false);
+    setCurrentPhase(null);
+    setGenerationError('Generation stopped.');
+    addLine({ type: 'error', content: '⏹ Generation stopped by user' });
+    const store = useActivityStore.getState();
+    if (store.run?.status === 'running') store.end('stopped', 'Generation stopped by user');
+  }
+
+  async function handleSend(prompt?: string, opts?: SendMessageOptions) {
+    const text = (prompt ?? input).trim();
+    if (!text || busy || sendingRef.current || !currentProject) return;
+    const attachments = opts?.attachedFiles ?? attachedFiles;
+
+    sendingRef.current = true;
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    setInput('');
+    setAttachedFiles([]);
+    setStreamingReply('');
+    setGenerationError(null);
+    clearLiveFiles();
+
+    const isNewApp = opts?.isInitialGeneration === true || messages.length === 0;
+    // If no OpenRouter key, show key modal before starting generation
+    const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+    const hasApiKey = Boolean(
+      storage?.getItem('openrouter_api_key') ||
+      storage?.getItem('openrouter_key') ||
+      storage?.getItem('ff_openrouter_key')
+    );
+    if (!hasApiKey && (opts?.isInitialGeneration || classifyChatIntent(text) === 'build')) {
+      setKeyModalOpen(true);
+      return;
+    }
+    const intent = opts?.isInitialGeneration || opts?.isRepair ? 'build' : classifyChatIntent(text);
+    let runId: string | null = null;
+    let ended = false;
+
+    try {
+      if (intent === 'chat') {
+        setAnswering(true);
+        setCurrentPhase('Thinking…');
+        const result = await sendMessage(currentProject.id, text, (message) => setCurrentPhase(message), {
+          ...opts,
+          modelPreference: opts?.modelPreference ?? modelPreference,
+          attachedFiles: attachments,
+          signal,
+          onToken: (token) => setStreamingReply((reply) => reply + token),
+          onRetry: (message) => {
+            setStreamingReply('');
+            setCurrentPhase(message);
+          },
+        });
+        if (result.mode === 'duplicate') {
+          setGenerationError('A response is already in progress for this chat.');
+          return;
+        }
+        setStreamingReply('');
+        addLine({ type: 'success', content: '✓ Answered — project files untouched' });
+        return;
+      }
+
+      const store = useActivityStore.getState();
+      store.begin(currentProject.id, text, isNewApp, modelLabel);
+      runId = useActivityStore.getState().run?.id ?? null;
+
+      setGenerating(true);
+      setCurrentPhase(isNewApp ? 'Starting AI Agent…' : 'Applying your changes…');
+      addLine({ type: 'output', content: `▶ ${text.slice(0, 140)}` });
+
+      const result = await sendMessage(
+        currentProject.id,
+        text,
+        (message) => {
+          setCurrentPhase(message);
+          useActivityStore.getState().ingestProgress(message);
+        },
+        {
+          ...opts,
+          isEdit: !isNewApp,
+          existingFiles: !isNewApp ? files.map(f => ({ path: f.path, content: f.content })) : undefined,
+          modelPreference: opts?.modelPreference ?? modelPreference,
+          attachedFiles: attachments,
+          signal,
+          onEvent: (event) => {
+            useActivityStore.getState().ingestAgent(event);
+            if (event.generatedFiles) {
+              for (const file of event.generatedFiles) {
+                if (file.path) addLiveFile(file.path);
+              }
+            }
+            if (event.message) {
+              setCurrentPhase(event.message);
+              addLine({ type: 'output', content: event.message });
+              if (event.message.startsWith('✓ ')) {
+                const file = event.message.replace(/^✓\s*/, '').trim();
+                if (file) addLiveFile(file);
+              }
+            }
+          },
+          onFile: (file) => {
+            useActivityStore.getState().ingestFile(file);
+            addLiveFile(file.path);
+          },
+        },
+      );
+
+      if (result.mode === 'duplicate') {
+        setGenerationError('A generation is already running for this chat.');
+        useActivityStore.getState().end('error', 'Generation already running');
+        ended = true;
+        return;
+      }
+      if (result.mode === 'chat') return;
+
+      const count = result.fileCount ?? result.files?.length ?? 0;
+      if (count === 0) {
+        setGenerationError('The engine returned no files. Your project was not changed — please retry.');
+        useActivityStore.getState().end('error', 'The engine returned no files');
+        ended = true;
+        return;
+      }
+
+      // Files are saved, but the authoritative build/analysis gates rejected
+      // the result. Never show the user a green “App generated” toast here.
+      if (result.verified === false) {
+        const failed = (result.verification?.gates ?? [])
+          .filter((gate) => gate.status === 'fail')
+          .map((gate) => `${gate.id} ${gate.detail}`)
+          .join('; ');
+        const message = `Files saved, but verification failed${failed ? `: ${failed}` : '.'}`;
+        setGenerationError(message);
+        addLine({ type: 'error', content: `✗ ${message}` });
+        toast('warning', message.length > 160 ? `${message.slice(0, 157)}…` : message);
+        useActivityStore.getState().end('error', message);
+        ended = true;
+        return;
+      }
+
+      toast('success', isNewApp ? `App generated (${count} files)` : `Updated ${count} files`);
+      useActivityStore.getState().end('success', isNewApp ? `Generated ${count} files` : `Updated ${count} files`);
+      ended = true;
+    } catch (error) {
+      if (signal.aborted) {
+        setGenerationError('Generation stopped.');
+        useActivityStore.getState().end('stopped', 'Generation stopped by user');
+        ended = true;
+        return;
+      }
+      const message = error instanceof Error ? error.message : 'Generation failed.';
+      setGenerationError(message);
+      addLine({ type: 'error', content: `✗ ${message}` });
+      useActivityStore.getState().end('error', message);
+      ended = true;
+    } finally {
+      sendingRef.current = false;
+      abortRef.current = null;
+      setGenerating(false);
+      setAnswering(false);
+      setCurrentPhase(null);
+      if (runId && !ended) {
+        const store = useActivityStore.getState();
+        if (store.run?.id === runId && store.run.status === 'running') {
+          store.end(signal.aborted ? 'stopped' : 'success');
+        }
+      }
+    }
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      void handleSend();
+    }
+  }
+
+  // Wizard hand-off: fire the first prompt once per project/conversation.
+  useEffect(() => {
+    if (!currentProject || !conversation || autoStarted.current || messages.length > 0) return;
+    const prompt = navState?.richPrompt?.trim() || navState?.initialPrompt?.trim();
+    if (!prompt) return;
+    autoTimer.current = window.setTimeout(() => {
+      autoTimer.current = null;
+      autoStarted.current = true;
+      void handleSend(prompt, { isInitialGeneration: true });
+    }, 350);
+    return () => {
+      if (autoTimer.current !== null) {
+        window.clearTimeout(autoTimer.current);
+        autoTimer.current = null;
+        autoStarted.current = false;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject?.id, conversation?.id, messages.length]);
+
+  // Native menu bridge + toolbar events.
+  useEffect(() => {
+    const focus = () => focusComposer();
+    const stop = () => handleStop();
+    const retry = () => {
+      if (lastUserMessage) {
+        void handleSend(lastUserMessage, {
+          isInitialGeneration: userMessageCount <= 1 && classifyChatIntent(lastUserMessage) === 'build',
+        });
+      }
+    };
+    const copyLast = () => {
+      if (lastAssistant) void copyText(lastAssistant.content);
+    };
+    const newChat = () => handleNewChat();
+    const prefill = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: string }>).detail?.text;
+      if (!text) return;
+      setInput((previous) => (previous.trim() ? previous : text));
+      window.requestAnimationFrame(focusComposer);
+    };
+    window.addEventListener('ff:focus-composer', focus);
+    window.addEventListener('ff:stop-generation', stop);
+    window.addEventListener('ff:retry-last', retry);
+    window.addEventListener('ff:copy-last', copyLast);
+    window.addEventListener('ff:new-chat', newChat);
+    window.addEventListener('ff:prefill-composer', prefill);
+    return () => {
+      window.removeEventListener('ff:focus-composer', focus);
+      window.removeEventListener('ff:stop-generation', stop);
+      window.removeEventListener('ff:retry-last', retry);
+      window.removeEventListener('ff:copy-last', copyLast);
+      window.removeEventListener('ff:new-chat', newChat);
+      window.removeEventListener('ff:prefill-composer', prefill);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastUserMessage, lastAssistant?.id, userMessageCount, currentProject?.id]);
+
+  const projectFiles = files.filter((file) => !file.is_directory);
+
+  const panelHeader = (
+    <header className={cn(
+      'flex shrink-0 items-center justify-between gap-3 border-b border-[var(--fb-line)] px-3 py-2.5 sm:px-4',
+      page ? 'bg-[var(--fb-bg)]/90 backdrop-blur-xl' : 'bg-[var(--fb-card)]',
+    )}>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[10px] border border-[var(--fb-line)] bg-[var(--fb-card)] text-[var(--fb-ink)]">
+          <MessageSquare className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <div className="truncate text-[13.5px] font-medium tracking-[-0.02em] text-[var(--fb-ink)]">
+            {page ? 'AI builder' : currentProject?.name || 'FlutterForge'}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--fb-muted)]">
+            <span className={cn(
+              'h-1.5 w-1.5 rounded-full',
+              busy ? 'animate-pulse bg-[var(--fb-orange)]' : 'bg-[var(--fb-lime)]',
+            )} />
+            <span className="truncate">
+              {busy ? `Working · ${elapsed}s` : 'Ready'}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button
+          aria-label="Manage agent capability skills"
+          className="flex h-8 items-center gap-1.5 rounded-full border border-[var(--fb-line)] bg-transparent px-2.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--fb-muted)] outline-none transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)]"
+          onClick={() => setIsSkillsOpen(true)}
+          title="Connect modular Flutter capability skills (Material 3, Clean Architecture, Animations, Web Parity...)"
+          type="button"
+        >
+          <Sparkles className="size-3 text-[var(--fb-magenta)]" />
+          <span className="hidden sm:inline">Skills</span>
+          <span className="grid size-4 place-items-center rounded-full bg-[var(--fb-magenta)]/15 text-[8px] font-bold text-[var(--fb-magenta)]">
+            {activeSkillCount}
+          </span>
+        </button>
+        <label className="sr-only" htmlFor="ff-model-preference">Generation model</label>
+        <select
+          aria-label="Generation model"
+          className="h-8 max-w-[88px] rounded-full border border-[var(--fb-line)] bg-transparent px-2.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--fb-muted)] outline-none transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)] focus-visible:border-[var(--fb-ink)] sm:max-w-[104px]"
+          id="ff-model-preference"
+          onChange={(event) => {
+            const next = event.target.value;
+            setModelPreference(next === 'quality' ? 'quality' : next === 'fast' ? 'fast' : 'auto');
+          }}
+          title="Auto sends first passes to the frontier model and edits to the fast model. Frontier needs Pro or your own OpenRouter key."
+          value={modelPreference}
+        >
+          <option value="auto">Auto</option>
+          <option value="fast">Fast</option>
+          <option value="quality">Frontier</option>
+        </select>
+        <button
+          aria-label="New chat"
+          className="grid size-8 place-items-center rounded-full border border-[var(--fb-line)] text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--fb-ink)]/20"
+          onClick={handleNewChat}
+          title="Start a new chat"
+          type="button"
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+    </header>
+  );
+
+  const composer = (
+    <div className="w-full" ref={composerRef}>
+      <PromptInput
+        className={cn(
+          '[&_[data-slot=input-group]]:rounded-[20px] [&_[data-slot=input-group]]:border-[var(--fb-line)] [&_[data-slot=input-group]]:bg-[var(--fb-card)] [&_[data-slot=input-group]]:shadow-[0_18px_44px_-38px_rgba(0,0,0,0.55)] [&_[data-slot=input-group]]:transition-colors [&_[data-slot=input-group]]:focus-within:border-[var(--fb-ink)] [&_[data-slot=input-group]]:focus-within:ring-2 [&_[data-slot=input-group]]:focus-within:ring-[var(--fb-ink)]/10',
+          page && 'text-[15px]',
+        )}
+        onSubmit={({ text }) => {
+          void handleSend(text);
+        }}
+      >
+        <PromptInputBody>
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+              {attachedFiles.map((path) => (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs text-foreground"
+                  key={path}
+                >
+                  <FileCode2 className="size-3 text-muted-foreground" />
+                  {path.split('/').pop()}
+                  <button
+                    aria-label={`Remove ${path}`}
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => setAttachedFiles((current) => current.filter((item) => item !== path))}
+                    type="button"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <PromptInputTextarea
+            className={cn('min-h-[64px] resize-none text-[13px] leading-relaxed placeholder:text-muted-foreground/70', page && 'text-[15px]')}
+            disabled={busy}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={busy
+              ? 'Working…'
+              : page
+                ? 'Ask about the project, or describe what to build next…'
+                : 'Describe a change or ask a question…'}
+            value={input}
+          />
+        </PromptInputBody>
+        <PromptInputFooter>
+          <PromptInputTools>
+            <PromptInputActionMenu>
+              <PromptInputActionMenuTrigger tooltip="Attach a project file" />
+              <PromptInputActionMenuContent className="max-h-64 overflow-y-auto">
+                {projectFiles.slice(0, 40).map((file) => (
+                  <PromptInputActionMenuItem
+                    key={file.path}
+                    onSelect={() => setAttachedFiles((current) => (
+                      current.includes(file.path) ? current : [...current, file.path].slice(0, 4)
+                    ))}
+                  >
+                    <FileCode2 className="mr-2 size-3.5" />
+                    <span className="truncate font-mono text-[11px]">{file.path}</span>
+                  </PromptInputActionMenuItem>
+                ))}
+                {projectFiles.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No project files yet.</div>
+                )}
+              </PromptInputActionMenuContent>
+            </PromptInputActionMenu>
+          </PromptInputTools>
+          <div className="flex items-center gap-1.5">
+            {currentProject && files.some((file) => file.path === 'pubspec.yaml') && (
+              <PromptInputButton
+                className="hidden sm:inline-flex"
+                onClick={() => openFile('pubspec.yaml')}
+                tooltip="Open pubspec.yaml"
+              >
+                <FolderOpen className="size-3.5" />
+              </PromptInputButton>
+            )}
+            <PromptInputSubmit
+              disabled={!busy && (!input.trim() || !currentProject)}
+              onStop={handleStop}
+              status={busy ? 'streaming' : undefined}
+            />
+          </div>
+        </PromptInputFooter>
+      </PromptInput>
+      <div className="mt-2 flex items-center justify-between gap-2 px-1">
+        <span className="hidden whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--fb-dim)] sm:block">
+          {busy ? 'Stop keeps your files' : '⌘↵ send · context included'}
+        </span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <div
+            className="flex items-center gap-1.5"
+            title={`Estimated context: ~${contextInfo.tokenEstimate.toLocaleString()} of ${tokenBudget.toLocaleString()} tokens`}
+          >
+            <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--fb-dim)]">ctx</span>
+            <div className="h-1 w-12 overflow-hidden rounded-full bg-[var(--fb-soft)]">
+              <div
+                className={cn('h-full rounded-full transition-all', tokenPct >= 90 ? 'bg-red-400' : tokenPct >= 70 ? 'bg-amber-400' : 'bg-[var(--fb-ink)]')}
+                style={{ width: `${tokenPct}%` }}
+              />
+            </div>
+            <span className="font-mono text-[9px] tabular-nums text-[var(--fb-dim)]">{tokenLabel}/{Math.round(tokenBudget / 1000)}k</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const body = (
+    <Conversation className={cn(page ? "absolute inset-0" : "flex-1 min-h-0")}>
+      <ConversationContent
+        className={cn(
+          'mx-auto w-full',
+          page ? 'max-w-[860px] gap-6 px-5 py-6 sm:px-10' : 'max-w-2xl gap-4 px-3 py-4',
+        )}
+      >
+        {!hasMessages && !busy && (
+          <ConversationEmptyState className={cn('max-[359px]:p-4', page ? 'min-h-[48vh]' : 'min-h-[320px]')}>
+            <div className="flex w-full max-w-xl flex-col items-center text-center">
+              <div className={cn('mb-5 grid place-items-center rounded-[20px] border border-[var(--fb-line)] bg-[var(--fb-card)] shadow-[0_18px_44px_-30px_rgba(0,0,0,0.45)] transition-transform hover:-translate-y-0.5', page ? 'size-16' : 'size-12')}>
+                <BrandLogo size={page ? 36 : 28} />
+              </div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-accent)]" />
+                FlutterForge · AI builder
+              </span>
+              <h2 className={cn('mt-5 text-balance font-medium tracking-[-0.045em] text-[var(--fb-ink)]', page ? 'text-[clamp(30px,4vw,48px)] leading-[1.05]' : 'text-[22px] leading-[1.1]', 'max-[359px]:text-[24px]')}>
+                One brief from a running app.
+              </h2>
+              <p className={cn('mt-3 text-pretty leading-relaxed text-[var(--fb-muted)] max-[359px]:hidden', page ? 'max-w-md text-[13.5px]' : 'max-w-sm text-[11.5px]')}>
+                Ask a question, request a code change, or brief a new Flutter feature. The agent writes real Dart files, repairs compile errors and keeps the preview live.
+              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-2 max-[359px]:w-full max-[359px]:flex-nowrap max-[359px]:justify-start max-[359px]:overflow-x-auto max-[359px]:pb-1">
+                {SUGGESTIONS.map((suggestion) => (
+                  <Suggestion
+                    key={suggestion.label}
+                    className={cn(
+                      'border-[var(--fb-line)] bg-[var(--fb-card)] text-[var(--fb-ink)] hover:border-[var(--fb-ink)] hover:bg-[var(--fb-card)] max-[359px]:shrink-0',
+                      page ? 'h-10 px-4 text-[12px]' : 'h-8 px-3 text-[11px]',
+                    )}
+                    onClick={(prompt) => {
+                      setInput(prompt);
+                      focusComposer();
+                    }}
+                    suggestion={suggestion.prompt}
+                  >
+                    {suggestion.label}
+                  </Suggestion>
+                ))}
+              </div>
+              <p className="mt-6 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--fb-dim)] max-[359px]:mt-4">
+                Dart 3 · Local studio · Real source
+              </p>
+            </div>
+          </ConversationEmptyState>
+        )}
+
+        {messages.map((message, index) => {
+          const isLastAssistant = lastAssistant?.id === message.id && index === messages.length - 1;
+          return (
+            <Fragment key={message.id}>
+              {index === lastAssistantIndex && showActivity && (
+                <RunActivity onOpen={openFile} page={page} />
+              )}
+              <MessageBubble
+                canRetry={isLastAssistant && Boolean(lastUserMessage) && !busy}
+                message={message}
+                onOpen={openFile}
+                onRetry={() => void handleSend(lastUserMessage, {
+                  isInitialGeneration: userMessageCount <= 1 && classifyChatIntent(lastUserMessage) === 'build',
+                })}
+                page={page}
+                onPromptClick={(prompt) => {
+                  if (busy) {
+                    setInput(prompt);
+                    focusComposer();
+                  } else {
+                    void handleSend(prompt);
+                  }
+                }}
+                onViewPreview={() => setActiveView('preview')}
+              />
+            </Fragment>
+          );
+        })}
+
+        {showActivity && lastAssistantIndex === -1 && (
+          <RunActivity onOpen={openFile} page={page} />
+        )}
+
+        {isAnswering && (
+          <Message className={page ? 'max-w-full' : undefined} from="assistant">
+            <MessageContent className={cn(page && 'w-full')}>
+              {streamingReply ? (
+                <MessageResponse>{streamingReply}</MessageResponse>
+              ) : (
+                <div className="flex items-center gap-1.5 py-1">
+                  <span className="size-1.5 animate-bounce rounded-full bg-[var(--fb-ink)] [animation-delay:-0.3s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-[var(--fb-ink)] [animation-delay:-0.15s]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-[var(--fb-ink)]" />
+                  <span className="ml-2 text-[11px] text-[var(--fb-muted)]">Preparing a reply…</span>
+                </div>
+              )}
+            </MessageContent>
+          </Message>
+        )}
+
+        {generationError && !busy && (
+          <div className="rounded-[16px] border border-[var(--fb-danger)] bg-[var(--fb-card)] px-3.5 py-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-[var(--fb-danger)]" />
+              <div className="min-w-0 flex-1">
+                <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-danger)]">Request failed</p>
+                <p className="mt-1 break-words text-[11.5px] leading-relaxed text-[var(--fb-muted)]">{generationError}</p>
+                {lastUserMessage && (
+                  <button
+                    className="mt-2 rounded-full border border-[var(--fb-danger)] px-3 py-1 text-[10px] font-semibold text-[var(--fb-danger)] transition-colors hover:bg-[var(--fb-soft)]"
+                    onClick={() => void handleSend(lastUserMessage, {
+                      isInitialGeneration: userMessageCount <= 1 && classifyChatIntent(lastUserMessage) === 'build',
+                    })}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+              <button
+                aria-label="Dismiss error"
+                className="p-0.5 text-[var(--fb-dim)] hover:text-[var(--fb-danger)]"
+                onClick={() => setGenerationError(null)}
+                type="button"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showRepair && currentProject && buildSession && (
+          <Confirmation
+            approval={{ id: buildSession.sessionId }}
+            className="border-amber-500/30 bg-amber-500/5"
+            state="approval-requested"
+          >
+            <ConfirmationTitle className="flex items-center gap-2 text-amber-600">
+              <Wrench className="size-3.5" /> Preview build failed
+            </ConfirmationTitle>
+            <ConfirmationRequest>
+              <div className="space-y-2">
+                <p className="text-xs text-amber-600/80">
+                  The preview build failed. Let the agent read the compiler errors and repair the project?
+                </p>
+                {repairHint.length > 0 && (
+                  <pre className="max-h-24 overflow-auto rounded-md bg-amber-500/10 p-2 font-mono text-[10px] text-amber-700 dark:text-amber-400">
+                    {repairHint.join('\n')}
+                  </pre>
+                )}
+              </div>
+            </ConfirmationRequest>
+            <ConfirmationActions>
+              <ConfirmationAction onClick={() => void repairBuild(currentProject.id)}>
+                Fix automatically
+              </ConfirmationAction>
+              <ConfirmationAction
+                onClick={() => setDismissedRepair(buildSession.sessionId)}
+                variant="outline"
+              >
+                Dismiss
+              </ConfirmationAction>
+            </ConfirmationActions>
+          </Confirmation>
+        )}
+      </ConversationContent>
+      <ConversationScrollButton />
+    </Conversation>
+  );
+
+  if (page) {
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-[var(--fb-bg)]">
+        {panelHeader}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {body}
+        </div>
+        <div className="shrink-0 border-t border-[var(--fb-line)] bg-[var(--fb-bg)]/95 px-5 pb-4 pt-3 backdrop-blur sm:px-10">
+          <div className="mx-auto w-full max-w-[860px]">{composer}</div>
+        </div>
+        <SkillsModal
+          isOpen={isSkillsOpen}
+          onClose={() => setIsSkillsOpen(false)}
+          onSkillsChanged={(skills) => setActiveSkillCount(skills.filter((s) => s.enabled).length)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[var(--fb-card)]">
+      {panelHeader}
+      {body}
+      <div className="shrink-0 border-t border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-2.5">
+        <div className="mx-auto w-full max-w-2xl">{composer}</div>
+      </div>
+      <SkillsModal
+        isOpen={isSkillsOpen}
+        onClose={() => setIsSkillsOpen(false)}
+        onSkillsChanged={(skills) => setActiveSkillCount(skills.filter((s) => s.enabled).length)}
+      />
+      <OpenRouterKeyModal open={keyModalOpen} onClose={() => setKeyModalOpen(false)} />
+      <ShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        projectName={currentProject?.name ?? 'Flutter App'}
+        files={files}
+      />
+    </div>
+  );
+}

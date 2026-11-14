@@ -1,0 +1,37 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "VITE_PREVIEW_API_URL"
+
+# ── Backend Proxy to Your Machine (Cloudflare Tunnel) ───────────────
+[[redirects]]
+  from = "/api/*"
+  to = "https://garage-sofa-tested-controls.trycloudflare.com/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/preview/*"
+  to = "https://garage-sofa-tested-controls.trycloudflare.com/preview/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/publish/*"
+  to = "https://garage-sofa-tested-controls.trycloudflare.com/publish/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "https://garage-sofa-tested-controls.trycloudflare.com/health"
+  status = 200
+  force = true
+
+# ── Single Page Application (SPA) fallback ─────────────────────────
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
