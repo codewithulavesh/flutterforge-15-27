@@ -9,13 +9,20 @@ import {
   ChevronsUpDown,
   CreditCard,
   FolderKanban,
+  Gauge,
+  Keyboard,
   LayoutGrid,
+  LifeBuoy,
   LogOut,
+  Megaphone,
   Moon,
+  Plug,
   Plus,
+  Rocket,
   Settings2,
   Sparkles,
   Sun,
+  UserRound,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -30,6 +37,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -43,55 +51,15 @@ import { useCreditsStore } from '@/stores/credits.store';
 import { useThemeStore } from '@/stores/theme.store';
 import type { Project } from '@/types';
 import { cn } from '@/utils/cn';
+import { ProfileAvatar } from './ProfileAvatar';
+import { planLabel } from '@/utils/profile';
 
 const REPO_URL = 'https://github.com/codewithulavesh/flutterforge';
+const ISSUES_URL = `${REPO_URL}/issues`;
+const RELEASES_URL = `${REPO_URL}/releases`;
 
 type ProjectSort = 'updated' | 'created' | 'name';
-
-function initials(value: string) {
-  const parts = value.trim().split(/[\s@._-]+/).filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : value.slice(0, 2);
-  return letters.toUpperCase();
-}
-
-function planLabel(plan?: string | null) {
-  const normalized = (plan || 'free').toLowerCase();
-  if (normalized === 'pro') return 'Pro plan';
-  if (normalized === 'team') return 'Team plan';
-  return 'Free plan';
-}
-
-function Avatar({
-  url,
-  name,
-  size = 'md',
-}: {
-  url?: string | null;
-  name: string;
-  size?: 'md' | 'lg';
-}) {
-  const dimension = size === 'lg' ? 'h-10 w-10 text-[11px]' : 'h-9 w-9 text-[10px]';
-  if (url) {
-    return (
-      <img
-        alt=""
-        className={cn('shrink-0 rounded-full border border-[var(--fb-line)] object-cover', dimension)}
-        src={url}
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'grid shrink-0 place-items-center rounded-full border border-[var(--fb-line)] bg-[var(--fb-soft)] font-mono font-semibold text-[var(--fb-ink)]',
-        dimension,
-      )}
-    >
-      {initials(name)}
-    </span>
-  );
-}
+type ProjectScope = 'all' | 'deployed';
 
 function MenuIcon({ children }: { children: React.ReactNode }) {
   return (
@@ -104,17 +72,29 @@ function MenuIcon({ children }: { children: React.ReactNode }) {
 export function DashboardSidebar({
   projects,
   sortBy,
+  scope,
   searching,
   onNewProject,
   onShowProjects,
+  onShowDeployments,
   onOpenPricing,
+  onEditProfile,
+  onOpenUsage,
+  onOpenIntegrations,
+  onOpenShortcuts,
 }: {
   projects: Project[];
   sortBy: ProjectSort;
+  scope: ProjectScope;
   searching: boolean;
   onNewProject: () => void;
   onShowProjects: (sort: ProjectSort) => void;
+  onShowDeployments: () => void;
   onOpenPricing: () => void;
+  onEditProfile: () => void;
+  onOpenUsage: () => void;
+  onOpenIntegrations: () => void;
+  onOpenShortcuts: () => void;
 }) {
   const navigate = useNavigate();
   const { profile, signOut } = useAuthStore();
@@ -179,6 +159,10 @@ export function DashboardSidebar({
   const planName = planLabel(plan);
   const planAction = (plan || 'free').toLowerCase() === 'free' ? 'Upgrade to Pro' : 'Manage plan';
   const credits = wallet?.balance;
+  const deployedCount = useMemo(
+    () => projects.filter((project) => project.status === 'deployed' || Boolean(project.deployment_url)).length,
+    [projects],
+  );
 
   const openProject = (projectId: string) => {
     setWorkspaceOpen(false);
@@ -186,22 +170,50 @@ export function DashboardSidebar({
     navigate(`/project/${projectId}`);
   };
 
-  const openPricing = () => {
+  const closeMenus = () => {
     setWorkspaceOpen(false);
     setUserOpen(false);
     setOpenMobile(false);
+  };
+
+  const openPricing = () => {
+    closeMenus();
     onOpenPricing();
   };
 
   const openNewProject = () => {
-    setWorkspaceOpen(false);
-    setOpenMobile(false);
+    closeMenus();
     onNewProject();
   };
 
+  const openEditProfile = () => {
+    closeMenus();
+    onEditProfile();
+  };
+
+  const openUsage = () => {
+    closeMenus();
+    onOpenUsage();
+  };
+
+  const openIntegrations = () => {
+    closeMenus();
+    onOpenIntegrations();
+  };
+
+  const openShortcuts = () => {
+    closeMenus();
+    onOpenShortcuts();
+  };
+
   const showProjects = (sort: ProjectSort) => {
-    setOpenMobile(false);
+    closeMenus();
     onShowProjects(sort);
+  };
+
+  const showDeployments = () => {
+    closeMenus();
+    onShowDeployments();
   };
 
   const NavIcon = ({ icon: Icon }: { icon: LucideIcon }) => (
@@ -461,6 +473,96 @@ export function DashboardSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton {...collapsedLabel('Usage & credits')} onClick={openUsage}>
+                  <NavIcon icon={Gauge} />
+                  <span>Usage &amp; credits</span>
+                  {!collapsed && <SidebarMenuBadge>{credits != null ? credits.toLocaleString() : '—'}</SidebarMenuBadge>}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  {...collapsedLabel('Deployments')}
+                  isActive={!searching && scope === 'deployed'}
+                  onClick={showDeployments}
+                >
+                  <NavIcon icon={Rocket} />
+                  <span>Deployments</span>
+                  {!collapsed && deployedCount > 0 && (
+                    <SidebarMenuBadge>{deployedCount}</SidebarMenuBadge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton {...collapsedLabel('Integrations')} onClick={openIntegrations}>
+                  <NavIcon icon={Plug} />
+                  <span>Integrations</span>
+                  {!collapsed && (
+                    <ChevronRight aria-hidden className="ml-auto shrink-0 text-[var(--fb-dim)]" size={14} />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Account</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton {...collapsedLabel('Edit profile')} onClick={openEditProfile}>
+                  <NavIcon icon={UserRound} />
+                  <span>Edit profile</span>
+                  {!collapsed && (
+                    <ChevronRight aria-hidden className="ml-auto shrink-0 text-[var(--fb-dim)]" size={14} />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton {...collapsedLabel('Keyboard shortcuts')} onClick={openShortcuts}>
+                  <NavIcon icon={Keyboard} />
+                  <span>Keyboard shortcuts</span>
+                  {!collapsed && <SidebarMenuBadge>⌘B</SidebarMenuBadge>}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  {...collapsedLabel('Support')}
+                  render={<a href={ISSUES_URL} rel="noreferrer" target="_blank" />}
+                >
+                  <NavIcon icon={LifeBuoy} />
+                  <span>Support</span>
+                  {!collapsed && (
+                    <ArrowUpRight aria-hidden className="ml-auto shrink-0 text-[var(--fb-dim)]" size={14} />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  {...collapsedLabel("What's new")}
+                  render={<a href={RELEASES_URL} rel="noreferrer" target="_blank" />}
+                >
+                  <NavIcon icon={Megaphone} />
+                  <span>What's new</span>
+                  {!collapsed && (
+                    <ArrowUpRight aria-hidden className="ml-auto shrink-0 text-[var(--fb-dim)]" size={14} />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="mt-auto px-3 pb-3">
@@ -480,7 +582,7 @@ export function DashboardSidebar({
             }}
             type="button"
           >
-            <Avatar name={displayName} url={profile?.avatar_url} />
+            <ProfileAvatar name={displayName} url={profile?.avatar_url} />
             {!collapsed && (
               <>
                 <span className="min-w-0 flex-1">
@@ -502,7 +604,7 @@ export function DashboardSidebar({
               role="menu"
             >
               <div className="flex items-center gap-3 px-3 py-3">
-                <Avatar name={displayName} size="lg" url={profile?.avatar_url} />
+                <ProfileAvatar name={displayName} size="lg" url={profile?.avatar_url} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13.5px] font-semibold text-[var(--fb-ink)]">{displayName}</p>
                   <p className="truncate text-[11.5px] text-[var(--fb-dim)]">{displayEmail}</p>
@@ -515,6 +617,24 @@ export function DashboardSidebar({
               )}
               <div className="h-px bg-[var(--fb-line)]" />
               <div className="p-1.5">
+                <button
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={openEditProfile}
+                  role="menuitem"
+                  type="button"
+                >
+                  <UserRound aria-hidden size={16} />
+                  Edit profile
+                </button>
+                <button
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={openUsage}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Gauge aria-hidden size={16} />
+                  Usage &amp; credits
+                </button>
                 <button
                   className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
                   onClick={openPricing}
@@ -541,6 +661,15 @@ export function DashboardSidebar({
                 >
                   {isDark ? <Sun aria-hidden size={16} /> : <Moon aria-hidden size={16} />}
                   {isDark ? 'Light mode' : 'Dark mode'}
+                </button>
+                <button
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={openShortcuts}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Keyboard aria-hidden size={16} />
+                  Keyboard shortcuts
                 </button>
               </div>
               <div className="h-px bg-[var(--fb-line)]" />

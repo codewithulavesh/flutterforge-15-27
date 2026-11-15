@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FolderOpen, Plus, Search, SearchX, Sparkles, X } from 'lucide-react';
+import { FolderOpen, Plus, Rocket, Search, SearchX, Sparkles, X } from 'lucide-react';
 import { DashboardSidebar } from '@/features/dashboard/DashboardSidebar';
 import { ProjectCard } from '@/features/dashboard/ProjectCard';
 import { CreateProjectWizard } from '@/features/dashboard/CreateProjectWizard';
+import { EditProfileModal } from '@/features/dashboard/EditProfileModal';
+import { IntegrationsModal } from '@/features/dashboard/IntegrationsModal';
+import { ShortcutsModal } from '@/features/dashboard/ShortcutsModal';
+import { UsageModal } from '@/features/dashboard/UsageModal';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useProjectStore } from '@/stores/project.store';
@@ -92,6 +96,11 @@ export function DashboardPage() {
   const [wizardDescription, setWizardDescription] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('updated');
+  const [scope, setScope] = useState<'all' | 'deployed'>('all');
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const projectsTopRef = useRef<HTMLDivElement>(null);
 
@@ -141,9 +150,15 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const deployedCount = useMemo(
+    () => projects.filter((project) => project.status === 'deployed' || Boolean(project.deployment_url)).length,
+    [projects],
+  );
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return [...projects]
+      .filter((p) => scope === 'all' || p.status === 'deployed' || Boolean(p.deployment_url))
       .filter((p) => !query
         || p.name.toLowerCase().includes(query)
         || p.description?.toLowerCase().includes(query))
@@ -152,7 +167,7 @@ export function DashboardPage() {
         if (sortBy === 'created') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
       });
-  }, [projects, search, sortBy]);
+  }, [projects, scope, search, sortBy]);
 
   const stats = useMemo(() => {
     const now = Date.now();
@@ -174,7 +189,17 @@ export function DashboardPage() {
 
   const showProjects = (nextSort: SortBy) => {
     setSearch('');
+    setScope('all');
     setSortBy(nextSort);
+    window.setTimeout(() => {
+      projectsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
+
+  const showDeployments = () => {
+    setSearch('');
+    setScope('deployed');
+    setSortBy('updated');
     window.setTimeout(() => {
       projectsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 60);
@@ -192,10 +217,16 @@ export function DashboardPage() {
       <SidebarProvider collapsible="icon" storageKey="ff-dashboard-sidebar">
         <div className="ff-dash-shell mx-auto flex h-[100dvh] w-full max-w-[1500px] overflow-hidden border-[var(--fb-line)] bg-[var(--fb-bg)] sm:h-[calc(100dvh-1.5rem)] sm:rounded-2xl sm:border lg:h-[calc(100dvh-2rem)]">
           <DashboardSidebar
+            onEditProfile={() => setProfileOpen(true)}
             onNewProject={openWizard}
+            onOpenIntegrations={() => setIntegrationsOpen(true)}
             onOpenPricing={openPricing}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+            onOpenUsage={() => setUsageOpen(true)}
+            onShowDeployments={showDeployments}
             onShowProjects={showProjects}
             projects={projects}
+            scope={scope}
             searching={searching}
             sortBy={sortBy}
           />
@@ -336,16 +367,38 @@ export function DashboardPage() {
           </div>
         </div>
 
+        {/* ── Deployment filter ───────────────────────────────────────── */}
+        {scope === 'deployed' && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-2.5">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--fb-soft)] text-[var(--fb-muted)]">
+              <Rocket aria-hidden size={14} />
+            </span>
+            <span className="text-[12px] font-medium text-[var(--fb-ink)]">Showing deployed apps</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--fb-dim)]">
+              {deployedCount} live
+            </span>
+            <button
+              className="ml-auto rounded-lg px-2.5 py-1 text-[11.5px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+              onClick={() => setScope('all')}
+              type="button"
+            >
+              Show all projects
+            </button>
+          </div>
+        )}
+
         {/* ── Result count ───────────────────────────────────────────── */}
         {!loading && hasProjects && (
           <div className="mb-3 mt-4 flex items-baseline justify-between gap-3">
             <p aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--fb-muted)]">
               {searching
                 ? `${filtered.length} of ${projects.length} match “${search.trim()}”`
-                : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
+                : scope === 'deployed'
+                  ? `${filtered.length} deployed app${filtered.length === 1 ? '' : 's'}`
+                  : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
             </p>
             <span className="hidden font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--fb-dim)] sm:block">
-              {SORT_LABELS[sortBy]}
+              {scope === 'deployed' ? 'Deployments' : SORT_LABELS[sortBy]}
             </span>
           </div>
         )}
@@ -374,18 +427,28 @@ export function DashboardPage() {
         ) : filtered.length === 0 ? (
           <div className="mx-auto flex max-w-xl flex-col items-center justify-center px-6 py-16 text-center">
             <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[18px] border border-[var(--fb-line)] bg-[var(--fb-soft)] text-[var(--fb-muted)]">
-              <SearchX size={24} />
+              {scope === 'deployed' && !searching ? <Rocket size={24} /> : <SearchX size={24} />}
             </div>
-            <h2 className="ffb-display ffb-caps text-[28px] leading-[0.9]">No matches</h2>
+            <h2 className="ffb-display ffb-caps text-[28px] leading-[0.9]">
+              {scope === 'deployed' && !searching ? 'Nothing shipped yet' : 'No matches'}
+            </h2>
             <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-[var(--fb-muted)]">
-              Nothing matches “{search.trim()}”. Try another keyword.
+              {scope === 'deployed' && !searching
+                ? 'Publish a project from its workspace and it will appear here with its live URL.'
+                : `Nothing matches “${search.trim()}”. Try another keyword.`}
             </p>
             <button
               type="button"
-              onClick={() => setSearch('')}
+              onClick={() => {
+                if (scope === 'deployed' && !searching) {
+                  setScope('all');
+                  return;
+                }
+                setSearch('');
+              }}
               className="mt-6 inline-flex h-11 items-center rounded-full border border-[var(--fb-line)] px-4 text-[11.5px] font-medium text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)]"
             >
-              Clear search
+              {scope === 'deployed' && !searching ? 'Show all projects' : 'Clear search'}
             </button>
           </div>
         ) : (
@@ -422,6 +485,15 @@ export function DashboardPage() {
           setWizardDescription('');
         }}
       />
+
+      <EditProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
+      <UsageModal
+        onClose={() => setUsageOpen(false)}
+        onOpenPricing={openPricing}
+        open={usageOpen}
+      />
+      <IntegrationsModal open={integrationsOpen} onClose={() => setIntegrationsOpen(false)} />
+      <ShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

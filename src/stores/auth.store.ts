@@ -34,6 +34,7 @@ interface AuthState {
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   setSession: (session: Session | null) => void;
   loadProfile: () => Promise<void>;
+  updateProfile: (patch: { full_name?: string; avatar_url?: string | null }) => Promise<{ error: string | null }>;
   clearError: () => void;
 }
 
@@ -125,6 +126,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (err) {
       console.warn('Failed to load profile:', err);
     }
+  },
+
+  updateProfile: async (patch) => {
+    const user = get().user;
+    if (!user) return { error: 'Sign in to update your profile.' };
+    if (!isSupabaseConfigured) return { error: supabaseConfigError };
+
+    const payload = {
+      full_name: patch.full_name?.trim() || null,
+      avatar_url: patch.avatar_url?.trim() || null,
+    };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', user.id)
+      .select()
+      .maybeSingle();
+
+    if (error) return { error: error.message };
+
+    const current = get().profile;
+    set({ profile: (data as Profile | null) ?? (current ? { ...current, ...payload } : current) });
+
+    // Keep auth metadata in sync so the name survives re-login on another client.
+    if (payload.full_name) {
+      await supabase.auth.updateUser({ data: { full_name: payload.full_name } }).catch(() => {});
+    }
+
+    return { error: null };
   },
 
   clearError: () => set({ error: null }),
