@@ -1,3 +1,4 @@
+import { useSupabaseStore } from '@/stores/supabase.store';
 import type { ProjectState, GeneratedFile } from '../orchestrator/state';
 import { callLLMText, parseFilesFromLLMOutput, agentModelFor } from './llmClient';
 
@@ -159,12 +160,53 @@ Generate:
     });
   }
 
+  // If the user connected a Supabase project, ALSO apply the generated DDL
+  // automatically — Lovable's flow: the schema exists in the live project
+  // before the preview ever boots.
+  const migrationReport = await attemptApplyMigrations(state, files);
+
   return {
     generatedFiles: files,
     logs: [
       ...state.logs,
       `[Backend API Agent] Supabase mode: generated SupabaseService, AuthService, and ${dataSchema?.migrations?.length ?? 0} SQL migrations. AI files: ${parsed.length}`,
+      ...(migrationReport ? [migrationReport.log] : []),
     ],
+  };
+}
+
+async function attemptApplyMigrations(state: ProjectState, files: Map<string, GeneratedFile>): Promise<{ log: string } | null> {
+  const connected = typeof localStorage !== 'undefined'
+    ? Boolean(localStorage.getItem('ff_supabase_ref') && localStorage.getItem('ff_supabase_pat'))
+    : false;
+  if (!connected) return null;
+
+  // Find every SQL migration file in the generated set
+  const sqlPaths = [...files.keys()].filter((path) => /^supabase\/migrations\/.*\.sql$/i.test(path));
+  if (sqlPaths.length === 0) return null;
+
+  const supabase = useSupabaseStore.getState();
+  let applied = 0;
+  const failures: string[] = [];
+
+  for (const path of sqlPaths) {
+    const file = files.get(path);
+    if (!file?.content.trim()) {
+      failures.push(`${path}: empty content`);
+      continue;
+    }
+    const result = await supabase.applyMigration(file.content, path);
+    if (result.ok) applied += 1;
+    else failures.push(`${path}: ${result.error}`);
+  }
+
+  if (applied === sqlPaths.length) {
+    return { log: `[Backend API Agent] Applied ${applied} migration${applied === 1 ? '' : 's'} to the connected Supabase project` };
+  }
+  return {
+    log: failures.length > 0
+      ? `[Backend API Agent] Applied ${applied}/${sqlPaths.length}; failed: ${failures.join(' | ')}`
+      : `[Backend API Agent] Migrations found but could not be applied — apply them manually in Settings → Supabase project.`,
   };
 }
 

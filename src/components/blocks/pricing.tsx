@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Check, Star } from 'lucide-react';
+import { Check, Loader2, Star } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { startRazorpayCheckout } from '@/lib/razorpay';
 import { cn } from '@/utils/cn';
 
 export interface PricingPlan {
@@ -36,13 +37,37 @@ export function Pricing({
   eyebrow = '07 — Plans',
   title = 'Pay for the studio, not the tokens.',
   description = 'Every plan exports real Flutter source. Paid tiers add more agent room, faster models, and shared workspaces.',
-  note = 'Draft pricing — checkout is not live yet. Every plan is free while FlutterForge is in preview.',
+  note = 'Payments are processed securely by Razorpay. Currently running in test mode — no real charges are made.',
   className,
 }: PricingProps) {
   const [isMonthly, setIsMonthly] = useState(true);
+  const [paying, setPaying] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const reduceMotion = useReducedMotion() ?? false;
   const sectionRef = useRef<HTMLElement>(null);
   const switchRef = useRef<HTMLButtonElement>(null);
+
+  async function checkout(planId: string) {
+    if (planId !== 'pro' && planId !== 'team') return;
+    setPaying(planId);
+    setNotice(null);
+    try {
+      await startRazorpayCheckout(
+        { plan: planId, period: isMonthly ? 'monthly' : 'yearly' },
+        {
+          onSuccess: ({ payment_id }) =>
+            setNotice({
+              tone: 'success',
+              text: `Payment verified (${payment_id}). Your ${planId === 'team' ? 'Team' : 'Pro'} workspace unlocks shortly — welcome to FlutterForge.`,
+            }),
+          onFailure: (message) => setNotice({ tone: 'error', text: message }),
+          onDismiss: () => setNotice({ tone: 'error', text: 'Payment cancelled before it was completed.' }),
+        },
+      );
+    } finally {
+      setPaying(null);
+    }
+  }
 
   useEffect(
     () => () => {
@@ -132,6 +157,20 @@ export function Pricing({
           </div>
         </div>
 
+        {notice ? (
+          <div
+            role="status"
+            className={cn(
+              'mt-6 rounded-2xl border px-4 py-3 text-[12px] leading-relaxed',
+              notice.tone === 'success'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                : 'border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-300',
+            )}
+          >
+            {notice.text}
+          </div>
+        ) : null}
+
         <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
           {plans.map((plan, index) => {
             const value = isMonthly ? plan.price : plan.yearlyPrice;
@@ -168,7 +207,7 @@ export function Pricing({
                             transition={{ duration: reduceMotion ? 0 : 0.22, ease: EASE }}
                             className="inline-block"
                           >
-                            ${value}
+                            ₹{value.toLocaleString('en-IN')}
                           </motion.span>
                         </AnimatePresence>
                       </span>
@@ -207,17 +246,39 @@ export function Pricing({
                   ))}
                 </ul>
 
-                <Link
-                  to={plan.href}
-                  className={cn(
-                    'mt-7 inline-flex h-11 w-full items-center justify-center rounded-full text-[12.5px] font-semibold transition-transform hover:-translate-y-px',
-                    plan.isPopular
-                      ? 'bg-[var(--fb-lime)] text-[#050505]'
-                      : 'border border-[var(--fb-line)] text-[var(--fb-ink)] hover:border-[var(--fb-ink)] hover:bg-[var(--fb-soft)]',
-                  )}
-                >
-                  {plan.buttonText}
-                </Link>
+                {plan.id === 'free' ? (
+                  <Link
+                    to={plan.href}
+                    className={cn(
+                      'mt-7 inline-flex h-11 w-full items-center justify-center rounded-full text-[12.5px] font-semibold transition-transform hover:-translate-y-px',
+                      'border border-[var(--fb-line)] text-[var(--fb-ink)] hover:border-[var(--fb-ink)] hover:bg-[var(--fb-soft)]',
+                    )}
+                  >
+                    {plan.buttonText}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={paying !== null}
+                    onClick={() => void checkout(plan.id)}
+                    aria-busy={paying === plan.id}
+                    className={cn(
+                      'mt-7 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full text-[12.5px] font-semibold transition-transform hover:-translate-y-px disabled:cursor-wait disabled:opacity-70',
+                      plan.isPopular
+                        ? 'bg-[var(--fb-lime)] text-[#050505]'
+                        : 'border border-[var(--fb-line)] text-[var(--fb-ink)] hover:border-[var(--fb-ink)] hover:bg-[var(--fb-soft)]',
+                    )}
+                  >
+                    {paying === plan.id ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" />
+                        Opening checkout…
+                      </>
+                    ) : (
+                      <>{plan.buttonText}</>
+                    )}
+                  </button>
+                )}
               </motion.article>
             );
           })}

@@ -37,12 +37,12 @@ RULES:
 8. No debug prints except initialization ones
 
 Output format:
-// FILE: lib/core/router/app_router.dart
+// FILE: lib/app/app_router.dart
 \`\`\`dart
 ...full Dart router code...
 \`\`\`
 
-// FILE: lib/app.dart
+// FILE: lib/app/app.dart
 \`\`\`dart
 ...full Dart app code...
 \`\`\`

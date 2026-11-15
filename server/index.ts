@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './env.js';
 import { createServer, IncomingMessage, ServerResponse } from 'node:http';
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -19,6 +20,8 @@ import {
   setCredential,
 } from './credentials.js';
 import { ECONOMY_MODEL, FRONTIER_MODEL, publicRoute, routeGeneration } from './routing.js';
+import { createOrder, verifyPayment, fulfillPayment, handleRazorpayWebhook } from './razorpay.js';
+import { verifySupabaseConnection, applySupabaseMigration } from './supabase-bridge.js';
 
 seedCredentialsFromEnv();
 
@@ -120,7 +123,7 @@ function openSse(res: ServerResponse, origin: string): (type: string, data: Reco
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
-    'Access-Control-Allow-Origin': origin || '*',
+    ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
   });
   (res as any).flushHeaders?.();
   res.write(': FlutterForge harness stream\n\n');
@@ -487,6 +490,103 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       typeof body.command === 'string' ? body.command : '',
     );
     sendJson(res, result.statusCode, result.body);
+    return;
+  }
+
+  // ── Razorpay webhook: raw body needed for HMAC — must run before JSON parsing ──
+  if (pathname === '/api/razorpay/webhook' && req.method === 'POST') {
+    let raw = Buffer.alloc(0);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        req.on('data', (chunk: Buffer) => {
+          raw = Buffer.concat([raw, chunk]);
+          if (raw.length > 2 * 1024 * 1024) req.destroy();
+        });
+        req.on('end', () => resolve());
+        req.on('error', reject);
+      });
+    } catch (error) {
+      sendJson(res, 400, { error: 'Could not read webhook body.' });
+      return;
+    }
+    const result = await handleRazorpayWebhook(raw, req.headers['x-razorpay-signature'] as string | undefined);
+    sendJson(res, result.statusCode, result.body);
+    return;
+  }
+
+  // ── Razorpay checkout ────────────────────────────────────────────────────
+  const razorpayCreate = pathname.match(/^\/api\/create-order\/?$/);
+  if (razorpayCreate && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await readJsonBody(req);
+    } catch (error: any) {
+      sendJson(res, error.statusCode || 400, { error: error.message });
+      return;
+    }
+    const result = await createOrder(body ?? {});
+    sendJson(res, result.statusCode, result.body);
+    return;
+  }
+
+  const razorpayVerify = pathname.match(/^\/api\/verify-payment\/?$/);
+  if (razorpayVerify && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await readJsonBody(req);
+    } catch (error: any) {
+      sendJson(res, error.statusCode || 400, { error: error.message });
+      return;
+    }
+    const result = verifyPayment(body ?? {});
+    sendJson(res, result.statusCode, result.body);
+    return;
+  }
+
+  const razorpayFulfill = pathname.match(/^\/api\/payments\/fulfill\/?$/);
+  if (razorpayFulfill && req.method === 'POST') {
+    let body: any;
+    try {
+      body = await readJsonBody(req);
+    } catch (error: any) {
+      sendJson(res, error.statusCode || 400, { error: error.message });
+      return;
+    }
+    const result = await fulfillPayment(body ?? {});
+    sendJson(res, result.statusCode, result.body);
+    return;
+  }
+
+  // ── Supabase Management API (user pastes PAT + project ref in Settings) ──
+  const supRoot = '/api/supabase';
+  if (pathname.startsWith(supRoot)) {
+    let body: any;
+    try {
+      body = await readJsonBody(req);
+    } catch (error: any) {
+      sendJson(res, error.statusCode || 400, { error: error.message });
+      return;
+    }
+    const { projectRef, personalAccessToken, sql, migrationFile } = body ?? {};
+    if (!projectRef || !personalAccessToken) {
+      sendJson(res, 400, { error: 'projectRef and personalAccessToken are required.' });
+      return;
+    }
+    if (pathname === `${supRoot}/verify`) {
+      const result = await verifySupabaseConnection(projectRef, personalAccessToken);
+      sendJson(res, result.ok ? 200 : 400, result);
+      return;
+    }
+    if (pathname === `${supRoot}/apply-migration`) {
+      if (!sql) {
+        sendJson(res, 400, { error: 'sql is required.' });
+        return;
+      }
+      const result = await applySupabaseMigration(projectRef, personalAccessToken, String(sql), migrationFile);
+      sendJson(res, result.ok ? 200 : 400, result);
+      return;
+    }
+    sendJson(res, 404, { error: 'Unknown supabase route.' });
     return;
   }
 

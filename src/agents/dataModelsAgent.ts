@@ -37,17 +37,17 @@ STRICT RULES:
 9. Nullable fields: use String? with json['field'] as String?
 10. Enums: define as proper Dart enums with values
 11. Models must be real domain objects — NOT generic "Item" or "Record"
-12. Each model in its own file under lib/core/models/
+12. Each model in its own file under lib/shared/models/
 
 For a ${domain} app, generate ALL domain models needed.
 
 Output format — EXACT separator for each file:
-// FILE: lib/core/models/user_model.dart
+// FILE: lib/shared/models/user_model.dart
 \`\`\`dart
 // full Dart code
 \`\`\`
 
-// FILE: lib/core/models/product_model.dart  
+// FILE: lib/shared/models/product_model.dart  
 \`\`\`dart
 // full Dart code
 \`\`\``,
@@ -91,9 +91,9 @@ No generic "Item" or "Data" model names.`,
   }
 
   // Always ensure a base user model exists
-  if (!files.has('lib/core/models/user_model.dart')) {
-    files.set('lib/core/models/user_model.dart', {
-      path: 'lib/core/models/user_model.dart',
+  if (!files.has('lib/shared/models/user_model.dart')) {
+    files.set('lib/shared/models/user_model.dart', {
+      path: 'lib/shared/models/user_model.dart',
       action: 'created',
       language: 'dart',
       content: generateUserModelFallback(pkgName),

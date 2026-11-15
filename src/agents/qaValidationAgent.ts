@@ -1,6 +1,6 @@
 import type { ProjectState, GateDiagnostic } from '../orchestrator/state';
 
-const CRITICAL_FILES = ['pubspec.yaml', 'lib/main.dart', 'lib/app.dart', 'lib/core/router/app_router.dart', 'lib/core/theme/app_theme.dart'];
+const CRITICAL_FILES = ['pubspec.yaml', 'lib/main.dart', 'lib/app/app.dart', 'lib/core/router/app_router.dart', 'lib/app/app_theme.dart', 'lib/core/theme/app_theme.dart', 'analysis_options.yaml'];
 
 export async function runQAValidationAgent(state: ProjectState): Promise<Partial<ProjectState>> {
   const files = state.generatedFiles;
@@ -36,13 +36,13 @@ export async function runQAValidationAgent(state: ProjectState): Promise<Partial
   }
 
   // G3 — app.dart / app_router.dart reference GoRouter
-  const appDart = files.get('lib/app.dart');
+  const appDart = files.get('lib/app/app.dart');
   if (appDart && !appDart.content.includes('MaterialApp')) {
     diagnostics.push({
       gate: 'G3-materialapp',
       level: 'error',
-      message: 'lib/app.dart does not use MaterialApp',
-      filePath: 'lib/app.dart',
+      message: 'lib/app/app.dart does not use MaterialApp',
+      filePath: 'lib/app/app.dart',
       suggestion: 'Use MaterialApp.router() with GoRouter config',
     });
     hasErrors = true;

@@ -26,8 +26,8 @@ export const LANDING_PLANS: PricingPlan[] = [
   {
     id: 'pro',
     name: 'Pro',
-    price: 19,
-    yearlyPrice: 15,
+    price: 1999,
+    yearlyPrice: 1599,
     period: 'per month',
     features: [
       'Everything in Free',
@@ -44,8 +44,8 @@ export const LANDING_PLANS: PricingPlan[] = [
   {
     id: 'team',
     name: 'Team',
-    price: 49,
-    yearlyPrice: 39,
+    price: 4999,
+    yearlyPrice: 3999,
     period: 'per month',
     features: [
       'Everything in Pro',

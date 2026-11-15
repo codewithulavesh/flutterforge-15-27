@@ -55,6 +55,206 @@ flutter:
 `,
   });
 
+  // ── 1.5 Deterministic framework skeleton (the professional shell the LLM fills within) ──
+  files.set('lib/main.dart', {
+    path: 'lib/main.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:${pkgName}/app/app.dart';
+import 'package:${pkgName}/core/network/dio_client.dart';
+import 'package:${pkgName}/core/storage/local_storage_service.dart';
+import 'package:${pkgName}/core/services/app_shell_client.dart';
+${needsSupabase ? "import 'package:${pkgName}/core/services/auth_service.dart';" : ''}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  DioClient.init();
+  await LocalStorageService.instance.init();
+  final prefs = await SharedPreferences.getInstance();
+  AppShellClient.init(prefs);
+  ${needsSupabase ? "await AuthService.init();" : ''}
+  runApp(const App());
+}
+`,
+  });
+  files.set('lib/app/app.dart', {
+    path: 'lib/app/app.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:${pkgName}/core/router/app_router.dart';
+import 'package:${pkgName}/app/app_theme.dart';
+
+/// Root widget. Router + Theme are wired here so they work in every screen.
+class App extends StatelessWidget {
+  const App({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeNotifier()),
+      ],
+      child: Consumer<ThemeNotifier>(
+        builder: (_, notifier, _) => MaterialApp.router(
+          title: '${state.productBrief?.appName || 'App'}',
+          debugShowCheckedModeBanner: false,
+          routerConfig: appRouter,
+          themeMode: notifier.mode,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+        ),
+      ),
+    );
+  }
+}
+`,
+  });
+  files.set('lib/app/app_theme.dart', {
+    path: 'lib/app/app_theme.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:flutter/material.dart';
+
+/// Material 3 extension facade — re-exports for feature code.
+export 'package:${pkgName}/core/theme/app_theme.dart';
+`,
+  });
+  files.set('lib/core/constants/app_constants.dart', {
+    path: 'lib/core/constants/app_constants.dart',
+    action: 'created',
+    language: 'dart',
+    content: `class AppConstants {
+  AppConstants._();
+  static const appName = '${state.productBrief?.appName || 'App'}';
+  static const pageSize = 20;
+  static const animDuration = Duration(milliseconds: 300);
+}
+`,
+  });
+  files.set('lib/core/errors/failures.dart', {
+    path: 'lib/core/errors/failures.dart',
+    action: 'created',
+    language: 'dart',
+    content: `/// Sealed failure hierarchy used across repositories.
+sealed class Failure {
+  const Failure(this.message, {this.cause});
+  final String message;
+  final Object? cause;
+}
+
+final class NetworkFailure extends Failure { const NetworkFailure(super.message, {this.cause}); final Object? cause; }
+final class ServerFailure extends Failure { const ServerFailure(super.message, {this.cause}); final Object? cause; }
+final class UnknownFailure extends Failure { const UnknownFailure([super.message = 'Something went wrong']); }
+`,
+  });
+  files.set('lib/core/network/dio_client.dart', {
+    path: 'lib/core/network/dio_client.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:dio/dio.dart';
+
+/// Shared Dio instance. Initialize once at app entry.
+class DioClient {
+  static late final Dio instance;
+
+  static void init({String? baseUrl}) {
+    instance = Dio(BaseOptions(baseUrl: baseUrl ?? '', connectTimeout: const Duration(seconds: 12), receiveTimeout: const Duration(seconds: 20)))
+      ..interceptors.add(LogInterceptor(responseBody: false, requestBody: false));
+  }
+}
+`,
+  });
+  files.set('lib/core/storage/local_storage_service.dart', {
+    path: 'lib/core/storage/local_storage_service.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:shared_preferences/shared_preferences.dart';
+
+/// Typed wrapper over SharedPreferences. Init once at app entry.
+class LocalStorageService {
+  LocalStorageService._();
+  static final LocalStorageService instance = LocalStorageService._();
+  late SharedPreferences _prefs;
+
+  Future<void> init() async => _prefs = await SharedPreferences.getInstance();
+  String? getString(String key) => _prefs.getString(key);
+  Future<bool> setString(String key, String value) => _prefs.setString(key, value);
+  Future<bool> remove(String key) => _prefs.remove(key);
+}
+`,
+  });
+  files.set('lib/core/utils/validators.dart', {
+    path: 'lib/core/utils/validators.dart',
+    action: 'created',
+    language: 'dart',
+    content: `class Validators {
+  static String? email(String? v) {
+    if (v == null || v.isEmpty) return 'Email is required';
+    if (!RegExp(r'^[\w\.\+\-]+@[\w\-]+(\.[a-z]{2,})+$').hasMatch(v.trim())) return 'Invalid email';
+    return null;
+  }
+
+  static String? required(String? v, [String field = 'This field']) => (v == null || v.trim().isEmpty) ? '\$field is required' : null;
+}
+`,
+  });
+  files.set('lib/core/widgets/empty_state.dart', {
+    path: 'lib/core/widgets/empty_state.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:flutter/material.dart';
+
+/// Empty state shown when a list/query has no data.
+class EmptyState extends StatelessWidget {
+  const EmptyState({required this.title, required this.message, this.icon, super.key});
+  final String title;
+  final String message;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(icon ?? Icons.inbox_outlined, size: 56, color: Theme.of(context).colorScheme.outline),
+        const SizedBox(height: 16),
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+      ]),
+    ),
+  );
+}
+`,
+  });
+  files.set('lib/core/widgets/loading_overlay.dart', {
+    path: 'lib/core/widgets/loading_overlay.dart',
+    action: 'created',
+    language: 'dart',
+    content: `import 'package:flutter/material.dart';
+
+/// Wraps a child and dims it with a spinner while [loading] is true.
+class LoadingOverlay extends StatelessWidget {
+  const LoadingOverlay({required this.loading, required this.child, super.key});
+  final bool loading;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    alignment: Alignment.center,
+    children: [
+      child,
+      if (loading) const ColoredBox(color: Colors.black26, child: SizedBox.expand(child: Center(child: CircularProgressIndicator()))),
+    ],
+  );
+}
+`,
+  });
+
   // ── 2. analysis_options.yaml ─────────────────────────────────────
   files.set('analysis_options.yaml', {
     path: 'analysis_options.yaml',

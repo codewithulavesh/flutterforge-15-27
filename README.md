@@ -183,6 +183,10 @@ and the agent sees its earlier work. `DELETE /api/harness/session/:id` resets bo
 | `DELETE` | `/api/harness/session/:projectId` | Delete workspace + session |
 | `GET` | `/api/harness/workspace?project_id=…` | Workspace path |
 | `POST` | `/api/preview/:projectId/build` | Start the warm Flutter web preview |
+| `POST` | `/api/create-order` | Razorpay — create order (server-authoritative price table) |
+| `POST` | `/api/verify-payment` | Razorpay — HMAC-SHA256 signature verification |
+| `POST` | `/api/payments/fulfill` | Verified payment → record + grant plan credits |
+| `POST` | `/api/razorpay/webhook` | Webhook endpoint (raw body, `RAZORPAY_WEBHOOK_SECRET`) |
 | `GET` | `/api/preview/project/:projectId/status` | Latest preview status + logs |
 | `GET` | `/api/preview/:sessionId/status` | Poll one preview build |
 | `POST` | `/api/preview/:sessionId/stop` | Stop a preview build |
@@ -322,7 +326,11 @@ Dark mode is still available from the theme toggle.
 
 ## Supabase
 
-- `supabase/migrations/` contains the schema, RLS, and vector store.
+- `supabase/migrations/` contains the schema, RLS, the 10M-user hardening set
+  (`20261115_001`), the credit ledger (`002`), billing (`003`), and admin RPCs (`004`).
+  Apply in order — see `docs/DATABASE_SETUP.md` (apply guide, verification
+  queries, partition ops, retention, RLS rewrite details).
+- Credits model and weights: `docs/CREDITS.md`.
 - `supabase/functions/ai-generate/` is the optional hosted fallback used when the
   local engine is unavailable.
 - Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; never ship a service-role

@@ -9,6 +9,7 @@ export { runCodeGenAgent } from './codeGenAgent';
 export { runFrontendBuilderAgent } from './frontendBuilderAgent';
 export { runBackendApiAgent } from './backendApiAgent';
 export { runIntegrationAgent } from './integrationAgent';
+export { runAppShellAgent } from './appShellAgent';
 export { runQAValidationAgent } from './qaValidationAgent';
 export { runRepairAgent } from './repairAgent';
 export {

@@ -13,6 +13,7 @@ import {
   runFrontendBuilderAgent,
   runBackendApiAgent,
   runIntegrationAgent,
+  runAppShellAgent,
   runQAValidationAgent,
   runRepairAgent,
   runDataModelsAgent,
@@ -39,6 +40,7 @@ export const PIPELINE_STEPS: PipelineStep[] = [
   { id: 'frontend-builder', label: 'Professional Screens', agentName: 'FrontendBuilderAgent', emoji: '🖥️' },
   { id: 'backend-api', label: 'Backend & API', agentName: 'BackendApiAgent', emoji: '🔌' },
   { id: 'integration', label: 'Integration & Routing', agentName: 'IntegrationAgent', emoji: '🔗' },
+  { id: 'app-shell', label: 'App Shell', agentName: 'AppShellAgent', emoji: '🧱' },
   { id: 'qa-validation', label: 'QA Validation', agentName: 'QAValidationAgent', emoji: '✅' },
 ];
 
@@ -112,6 +114,7 @@ export class LovableGenerationPipeline {
     await step('frontend-builder', runFrontendBuilderAgent);
     await step('backend-api', runBackendApiAgent);
     await step('integration', runIntegrationAgent);
+    await step('app-shell', runAppShellAgent);        // Deterministic onboarding/auth/settings/account
 
     // ── Phase 4: QA + Self-Healing Repair Loop ────────────────────────
     state.status = 'verifying';

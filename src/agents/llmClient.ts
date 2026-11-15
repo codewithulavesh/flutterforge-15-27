@@ -3,6 +3,7 @@
  * Features: multi-key pool rotation, automatic model failover, JSON & text modes, streaming.
  */
 import { keyPool } from '../agent/keyPool';
+import { useCreditsStore } from '../stores/credits.store';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -17,6 +18,10 @@ export interface LLMCallOptions {
   signal?: AbortSignal;
   onToken?: (token: string) => void;
   apiKey?: string;
+  /** Subscription metering — overridden by the pipeline where it knows the caller's tier. */
+  creditWeight?: number;
+  /** Human label recorded in the usage ledger (e.g. "Intake Agent", "Repair round"). */
+  creditLabel?: string;
 }
 
 export interface LLMResponse {
@@ -27,6 +32,58 @@ export interface LLMResponse {
 
 // Configured model from environment or fallback
 const ENV_MODEL = (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_AGENT_MODEL as string) : '') || '';
+
+/** Thrown when the user ran out of subscription credits before a call. */
+export class CreditsExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CreditsExhaustedError';
+  }
+}
+
+function defaultCreditWeight(modelId?: string | null): number {
+  if (!modelId) return 1;
+  const id = modelId.toLowerCase();
+  if (/ultra|70b|deepseek-chat|qwen/.test(id)) return 4;
+  return 1;
+}
+
+/**
+ * Subscription gate for LLM calls — every model call burns credits.
+ * Pre-check (fail closed) then charge after a successful call (fail open on
+ * infra errors so a flaky Supabase connection can't strand the user).
+ */
+async function assertCreditsFor(options: LLMCallOptions): Promise<void> {
+  try {
+    const store = useCreditsStore.getState();
+    const weight = options.creditWeight ?? defaultCreditWeight(options.model);
+    if (!store.wallet) await store.refresh();
+    const balance = useCreditsStore.getState().wallet?.balance;
+    if (typeof balance === 'number' && balance < weight) {
+      throw new CreditsExhaustedError(
+        `Insufficient credits — you need ${weight} credit${weight === 1 ? '' : 's'}, you have ${balance}. Upgrade to keep generating.`,
+      );
+    }
+  } catch (cause) {
+    if (cause instanceof CreditsExhaustedError) throw cause;
+    // Infra errors are non-fatal — don't block the pipeline on them.
+    console.warn('[credits] gate unavailable, allowing call:', cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+async function meterLlmCall(model: string, label: string, configuredWeight?: number): Promise<void> {
+  const weight = configuredWeight ?? defaultCreditWeight(model);
+  try {
+    const store = useCreditsStore.getState();
+    const result = await store.spend(weight, 'llm_call', label, model);
+    if (!result.ok) {
+      console.warn('[credits] deduction refused:', result.error);
+    }
+  } catch (cause) {
+    // Metering problems must never break the user's build.
+    console.warn('[credits] metering failed:', cause instanceof Error ? cause.message : String(cause));
+  }
+}
 
 // Model tiers ordered by reliability and quality
 export const AGENT_MODELS = {

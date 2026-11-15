@@ -1,8 +1,9 @@
-import { Settings as SettingsIcon, Save, RefreshCw, KeyRound } from 'lucide-react';
+import { Settings as SettingsIcon, Save, RefreshCw, KeyRound, Database, Link2, Unlink, FileCode2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useProjectStore } from '@/stores/project.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { useCredentialsStore, type CredentialProvider } from '@/stores/credentials.store';
+import { useSupabaseStore } from '@/stores/supabase.store';
 import { toast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -22,7 +23,7 @@ const PROVIDER_LABELS: Record<CredentialProvider, { name: string; hint: string; 
 };
 
 export function SettingsView() {
-  const { currentProject, updateProject } = useProjectStore();
+  const { currentProject, updateProject, files } = useProjectStore();
   const plan = useAuthStore((state) => state.profile?.plan ?? 'free');
   const {
     status: credentialStatus,
@@ -39,6 +40,9 @@ export function SettingsView() {
   const [themeMode, setThemeMode] = useState(currentProject?.theme_mode ?? 'light');
   const [platform, setPlatform] = useState(currentProject?.platform ?? 'web');
   const [keyDrafts, setKeyDrafts] = useState<Record<CredentialProvider, string>>({ openrouter: '', deepseek: '' });
+  const [sbRef, setSbRef] = useState('');
+  const [sbPat, setSbPat] = useState('');
+  const { connected, connecting, lastError, projectName, projectRef, save: connectSupabase, disconnect: disconnectSupabase } = useSupabaseStore();
 
   useEffect(() => {
     void loadCredentials();
@@ -141,6 +145,100 @@ export function SettingsView() {
                 <option value="windows">Windows only</option>
               </select>
             </div>
+          </div>
+
+          <div className="ff-card p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Database size={15} className="text-[var(--ff-primary)]" />
+                <h3 className="text-sm font-semibold text-[var(--ff-text)]">Supabase project</h3>
+              </div>
+              <Badge variant={connected ? 'success' : 'info'}>{connected ? 'Connected' : 'Not connected'}</Badge>
+            </div>
+
+            <p className="text-xs text-[var(--ff-text-muted)]">
+              Paste your project ref and a personal access token from
+              <code className="mx-1 rounded bg-[var(--ff-surface-2)] px-1 py-0.5 font-mono text-[10px]">supabase.com/dashboard/account/tokens</code>.
+              FlutterForge uses them to apply the generated schema automatically.
+              Keys never leave this machine or your engine process.
+            </p>
+
+            {connected ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--ff-border)]/60 p-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-[var(--ff-text)]">{projectName || projectRef}</p>
+                  <p className="text-[11px] font-mono text-[var(--ff-text-dim)]">{projectRef}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={disconnectSupabase}
+                  className="flex items-center gap-1 rounded-md border border-[var(--ff-border)] px-2.5 py-1.5 text-[11px] text-[var(--ff-text-muted)] hover:text-[var(--ff-text)] hover:border-[var(--ff-border-hover)]"
+                >
+                  <Unlink size={11} />
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--ff-text-muted)]">Project ref</span>
+                    <input
+                      className="ff-input w-full px-3 py-2 text-xs font-mono"
+                      placeholder="abcdefghijklmnoprstuv"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={sbRef}
+                      onChange={(event) => setSbRef(event.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-[var(--ff-text-muted)]">Personal access token</span>
+                    <input
+                      className="ff-input w-full px-3 py-2 text-xs font-mono"
+                      placeholder="sbp_…"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={sbPat}
+                      onChange={(event) => setSbPat(event.target.value)}
+                    />
+                  </label>
+                </div>
+                <Button icon={<Link2 size={13} />} disabled={connecting || !sbRef.trim() || !sbPat.trim()} onClick={async () => { const ok = await connectSupabase(sbRef.trim(), sbPat.trim()); if (ok) { setSbRef(''); setSbPat(''); toast('success', 'Supabase project connected'); } else toast('error', useSupabaseStore.getState().lastError ?? 'Could not connect.'); }}>
+                  {connecting ? 'Verifying…' : 'Connect Supabase'}
+                </Button>
+                {lastError && <p className="text-[11px] text-[var(--ff-danger)]">{lastError}</p>}
+              </div>
+            )}
+
+            {connected && files.filter((f) => /^supabase\/migrations\/.*\.sql$/i.test(f.path)).length > 0 && (
+              <div className="rounded-lg border border-[var(--ff-border)]/60 p-3 space-y-2">
+                <p className="text-[11px] font-semibold text-[var(--ff-text-muted)]">Generated migrations</p>
+                {files
+                  .filter((f) => /^supabase\/migrations\/.*\.sql$/i.test(f.path))
+                  .map((f) => (
+                    <div key={f.path} className="flex flex-wrap items-center justify-between gap-2">
+                      <code className="flex items-center gap-1 font-mono text-[10px] text-[var(--ff-text-muted)]">
+                        <FileCode2 size={11} className="shrink-0" />
+                        {f.path}
+                      </code>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={connecting}
+                        onClick={async () => {
+                          const ok = await useSupabaseStore.getState().applyMigration(f.content, f.path);
+                          if (ok) toast('success', 'Migration applied');
+                          else toast('error', useSupabaseStore.getState().lastError ?? 'Migration failed.');
+                        }}
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
 
           <div className="ff-card p-3 flex items-center justify-between gap-2">

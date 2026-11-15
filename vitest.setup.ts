@@ -37,3 +37,27 @@ if (!Element.prototype.scrollTo) {
     /* jsdom has no layout */
   };
 }
+
+// Node 22+ defines an experimental `localStorage` global that stays undefined
+// unless the process is started with --localstorage-file. Vitest's jsdom
+// environment skips globals Node already exposes, so storage would otherwise be
+// missing from every test even though browsers always provide it.
+if (typeof window !== 'undefined' && !window.localStorage) {
+  const values = new Map<string, string>();
+  const storage: Storage = {
+    get length() {
+      return values.size;
+    },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => {
+      values.delete(key);
+    },
+    setItem: (key, value) => {
+      values.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+}

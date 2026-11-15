@@ -1492,6 +1492,32 @@
   --fb-danger: #ff8a8a;
 }
 
+/* ── Dashboard app shell ─────────────────────────────────────────────────────
+   A neutral, framed workbench. The sidebar sits on the raised card tone while
+   the canvas uses the page tone, so the shell reads as a floating window like
+   the shadcn sidebar block instead of a full-bleed admin page. */
+.ff-dash-shell {
+  --fb-bg: #fcfbf8;
+  --fb-card: #f4f2ed;
+  --fb-elevated: #ffffff;
+  --fb-line: rgba(5, 5, 5, 0.09);
+  --fb-soft: rgba(5, 5, 5, 0.05);
+  --fb-ink: #0a0a0a;
+  --fb-muted: #6b6b6b;
+  --fb-dim: #8a8a8a;
+}
+
+[data-theme='dark'] .ff-dash-shell {
+  --fb-bg: #0b0b0c;
+  --fb-card: #171719;
+  --fb-elevated: #202023;
+  --fb-line: rgba(255, 255, 255, 0.08);
+  --fb-soft: rgba(255, 255, 255, 0.055);
+  --fb-ink: #fafafa;
+  --fb-muted: #a1a1a6;
+  --fb-dim: #7c7c82;
+}
+
 /* The studio theme remaps `.text-white` to dark ink in light mode. Inside
    the bold landing, white text only ever sits on dark surfaces, so restore
    the literal colour for this scope. */

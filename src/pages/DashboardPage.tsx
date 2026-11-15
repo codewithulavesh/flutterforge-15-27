@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { FolderOpen, LogOut, Moon, Plus, Search, SearchX, Sparkles, Sun, X } from 'lucide-react';
-import { BrandLogo } from '@/components/BrandLogo';
-import { useProjectStore } from '@/stores/project.store';
-import { useAuthStore } from '@/stores/auth.store';
-import { useThemeStore } from '@/stores/theme.store';
+import { FolderOpen, Plus, Search, SearchX, Sparkles, X } from 'lucide-react';
+import { DashboardSidebar } from '@/features/dashboard/DashboardSidebar';
 import { ProjectCard } from '@/features/dashboard/ProjectCard';
 import { CreateProjectWizard } from '@/features/dashboard/CreateProjectWizard';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { useProjectStore } from '@/stores/project.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { HERO_PROMPT_KEY } from '@/utils/landing';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/utils/cn';
@@ -26,13 +27,6 @@ function greeting(): string {
   if (hour < 12) return 'Good morning';
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
-}
-
-function initialsOf(name?: string | null, email?: string | null): string {
-  const source = (name || email || '?').trim();
-  const parts = source.split(/[\s@._-]+/).filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : source.slice(0, 2);
-  return letters.toUpperCase();
 }
 
 function ProjectSkeletons() {
@@ -93,15 +87,13 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { projects, loadProjects, loading } = useProjectStore();
-  const { profile, signOut } = useAuthStore();
-  const { theme, toggle } = useThemeStore();
+  const { profile } = useAuthStore();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardDescription, setWizardDescription] = useState('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('updated');
   const searchRef = useRef<HTMLDivElement>(null);
-
-  const isDark = theme === 'dark';
+  const projectsTopRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadProjects();
@@ -180,62 +172,57 @@ export function DashboardPage() {
     setWizardOpen(true);
   };
 
+  const showProjects = (nextSort: SortBy) => {
+    setSearch('');
+    setSortBy(nextSort);
+    window.setTimeout(() => {
+      projectsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
+
+  const openPricing = () => {
+    navigate('/');
+    window.setTimeout(() => {
+      document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 320);
+  };
+
   return (
-    <div className="ff-bold min-h-[100dvh]">
-      {/* ── Masthead ─────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-[var(--fb-line)] bg-[var(--fb-bg)]/95 backdrop-blur-xl">
-        <div className="mx-auto flex h-[60px] max-w-[1440px] items-center gap-2 px-3 sm:px-6">
-          <button
-            aria-label="FlutterForge home"
-            className="flex h-11 items-center gap-2.5 rounded-full pr-1 transition-opacity hover:opacity-75"
-            onClick={() => navigate('/')}
-            type="button"
-          >
-            <BrandLogo size={26} />
-            <span className="ffb-display whitespace-nowrap text-[16px] tracking-[-0.02em] text-[var(--fb-ink)]">
-              FlutterForge
-            </span>
-          </button>
+    <div className="ff-bold min-h-[100dvh] bg-[var(--fb-bg)] sm:p-3 lg:p-4">
+      <SidebarProvider collapsible="icon" storageKey="ff-dashboard-sidebar">
+        <div className="ff-dash-shell mx-auto flex h-[100dvh] w-full max-w-[1500px] overflow-hidden border-[var(--fb-line)] bg-[var(--fb-bg)] sm:h-[calc(100dvh-1.5rem)] sm:rounded-2xl sm:border lg:h-[calc(100dvh-2rem)]">
+          <DashboardSidebar
+            onNewProject={openWizard}
+            onOpenPricing={openPricing}
+            onShowProjects={showProjects}
+            projects={projects}
+            searching={searching}
+            sortBy={sortBy}
+          />
 
-          <span className="hidden rounded-full border border-[var(--fb-line)] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--fb-muted)] sm:inline-flex">
-            Workspace
-          </span>
+          <div className="relative z-0 flex min-w-0 flex-1 flex-col">
+            <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--fb-line)] px-3 sm:px-5">
+              <SidebarTrigger />
+              <span className="ml-1 hidden text-[13px] font-medium text-[var(--fb-muted)] sm:block">
+                Dashboard
+              </span>
+              <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+                <ThemeToggle />
+                <button
+                  className="hidden h-9 items-center gap-1.5 rounded-full bg-[var(--fb-ink)] px-4 text-[12px] font-semibold text-[var(--fb-bg)] transition-transform hover:-translate-y-px sm:inline-flex"
+                  onClick={openWizard}
+                  type="button"
+                >
+                  <Plus size={14} />
+                  New app
+                </button>
+              </div>
+            </header>
 
-          <div className="ml-auto flex items-center gap-2">
-            <span className="hidden max-w-[180px] truncate font-mono text-[10px] text-[var(--fb-dim)] lg:block">
-              {profile?.email}
-            </span>
-            <button
-              type="button"
-              onClick={toggle}
-              aria-label={isDark ? 'Switch to light appearance' : 'Switch to dark appearance'}
-              aria-pressed={isDark}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[var(--fb-line)] text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)]"
-            >
-              {isDark ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <span
-              aria-hidden
-              className="hidden h-11 w-11 items-center justify-center rounded-full bg-[var(--fb-ink)] font-mono text-[11px] font-semibold text-[var(--fb-bg)] sm:flex"
-            >
-              {initialsOf(profile?.full_name, profile?.email)}
-            </span>
-            <button
-              type="button"
-              onClick={signOut}
-              aria-label="Sign out"
-              className="flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-[var(--fb-line)] text-[11px] font-medium text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)] sm:w-auto sm:px-3.5"
-            >
-              <LogOut size={14} />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-[1440px] px-3 pb-28 pt-8 sm:px-6 sm:pb-16 sm:pt-12">
+            <main className="ff-scrollbar flex-1 overflow-y-auto">
+              <div className="mx-auto max-w-[1200px] px-4 pb-28 pt-8 sm:px-8 sm:pb-16 sm:pt-10">
         {/* ── Welcome ────────────────────────────────────────────────── */}
-        <section className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <section className="min-w-0">
           <div className="min-w-0">
             <p className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--fb-magenta)]" />
@@ -248,15 +235,6 @@ export function DashboardPage() {
               Every app you have briefed, generated and previewed — source, builds and live preview in one place.
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={openWizard}
-            className="hidden h-11 shrink-0 items-center gap-2 rounded-full bg-[var(--fb-ink)] px-5 text-[12px] font-semibold text-[var(--fb-bg)] transition-transform hover:-translate-y-px sm:inline-flex"
-          >
-            <Plus size={15} />
-            New app
-          </button>
         </section>
 
         {/* ── Stats ──────────────────────────────────────────────────── */}
@@ -306,7 +284,10 @@ export function DashboardPage() {
         )}
 
         {/* ── Search + sort ──────────────────────────────────────────── */}
-        <div className="mt-6 flex flex-col gap-2 rounded-[20px] border border-[var(--fb-line)] bg-[var(--fb-card)] p-2 transition-colors focus-within:border-[var(--fb-ink)] sm:flex-row sm:items-center">
+        <div
+          className="mt-6 flex scroll-mt-6 flex-col gap-2 rounded-[20px] border border-[var(--fb-line)] bg-[var(--fb-card)] p-2 transition-colors focus-within:border-[var(--fb-ink)] sm:flex-row sm:items-center"
+          ref={projectsTopRef}
+        >
           <div className="relative min-w-0 flex-1" ref={searchRef}>
             <Search
               aria-hidden
@@ -414,7 +395,11 @@ export function DashboardPage() {
             ))}
           </div>
         )}
-      </main>
+              </div>
+            </main>
+          </div>
+        </div>
+      </SidebarProvider>
 
       {/* Mobile quick-create */}
       <button

@@ -1,10 +1,43 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey, X-OpenRouter-Key, X-OpenRouter-Model",
-};
+// The browser calls this function cross-origin from the deployed app, so CORS
+// cannot be a blanket `*`. Set ALLOWED_ORIGINS (comma-separated) to the exact
+// app origins; same-origin and localhost dev servers are always allowed.
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return /^(localhost|127\.0\.0\.1)$/.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function resolveAllowedOrigin(req: Request): string | null {
+  const origin = req.headers.get("origin");
+  if (!origin) return null;
+  const configured = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (configured.includes("*") || configured.includes(origin)) return origin;
+  if (isLocalOrigin(origin)) return origin;
+  try {
+    if (new URL(origin).host === req.headers.get("host")) return origin;
+  } catch {
+    // Ignore malformed origins.
+  }
+  return null;
+}
+
+function corsHeaders(req: Request): Record<string, string> {
+  const allowed = resolveAllowedOrigin(req);
+  return {
+    ...(allowed ? { "Access-Control-Allow-Origin": allowed, Vary: "Origin" } : {}),
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization, X-Client-Info, Apikey, X-OpenRouter-Key, X-OpenRouter-Model",
+  };
+}
 
 const SYSTEM_PROMPT = `You are Lovable FlutterForge Agent, an elite full-stack Flutter and Supabase architect and software engineer.
 You design, architect, and generate end-to-end, production-grade Flutter mobile and web applications integrated with Supabase backend services.
@@ -93,8 +126,10 @@ function clampMaxTokens(model: string, requested: number): number {
 }
 
 Deno.serve(async (req: Request) => {
+  const cors = corsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: cors });
   }
 
   try {
@@ -104,7 +139,7 @@ Deno.serve(async (req: Request) => {
     if (!openRouterKey) {
       return new Response(JSON.stringify({ error: "Missing OpenRouter API key." }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -186,7 +221,7 @@ Deno.serve(async (req: Request) => {
 
         if (isChat && typeof aiContent === "string" && aiContent.trim()) {
           return new Response(JSON.stringify({ answer: aiContent.trim(), model }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...cors, "Content-Type": "application/json" },
           });
         }
 
@@ -247,7 +282,7 @@ Deno.serve(async (req: Request) => {
             missing,
             raw_tokens: data.usage?.total_tokens ?? 0,
           }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...cors, "Content-Type": "application/json" },
           });
         }
       } catch (e) {
@@ -260,12 +295,12 @@ Deno.serve(async (req: Request) => {
       error: `All models failed. Last error: ${lastError}`,
     }), {
       status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   } catch (err) {
     return new Response(JSON.stringify({ error: `Server error: ${String(err)}` }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

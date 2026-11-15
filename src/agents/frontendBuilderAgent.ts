@@ -66,7 +66,7 @@ export async function runFrontendBuilderAgent(state: ProjectState): Promise<Part
   const modelImports = modelFiles
     .map((f) => {
       const name = f.split('/').pop()?.replace('.dart', '') || '';
-      return `import 'package:${pkgName}/core/models/${name}.dart';`;
+      return `import 'package:${pkgName}/shared/models/${name}.dart';`;
     })
     .join('\n');
 
