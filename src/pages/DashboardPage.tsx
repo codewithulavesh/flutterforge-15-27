@@ -10,6 +10,8 @@ import { IntegrationsSection } from '@/features/dashboard/sections/IntegrationsS
 import { ProfileSection } from '@/features/dashboard/sections/ProfileSection';
 import { SettingsSection } from '@/features/dashboard/sections/SettingsSection';
 import { ShortcutsSection } from '@/features/dashboard/sections/ShortcutsSection';
+import { AgentsSection } from '@/features/dashboard/sections/AgentsSection';
+import { BillingSection } from '@/features/dashboard/sections/BillingSection';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useProjectStore } from '@/stores/project.store';
@@ -17,8 +19,10 @@ import { useAuthStore } from '@/stores/auth.store';
 import { HERO_PROMPT_KEY } from '@/utils/landing';
 
 const SECTION_LABELS: Array<{ path: string; label: string }> = [
+  { path: '/dashboard/agents', label: 'Agents' },
   { path: '/dashboard/deployments', label: 'Deployments' },
   { path: '/dashboard/usage', label: 'Usage & credits' },
+  { path: '/dashboard/billing', label: 'Plans & billing' },
   { path: '/dashboard/integrations', label: 'Integrations' },
   { path: '/dashboard/profile', label: 'Edit profile' },
   { path: '/dashboard/settings', label: 'Settings' },
@@ -77,11 +81,13 @@ export function DashboardPage() {
     setWizardOpen(true);
   };
 
-  const openPricing = () => {
-    navigate('/');
-    window.setTimeout(() => {
-      document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 320);
+  const openWizardWithBrief = (brief: string) => {
+    setWizardDescription(brief);
+    setWizardOpen(true);
+  };
+
+  const openBilling = () => {
+    navigate('/dashboard/billing');
   };
 
   const handleSignOut = () => {
@@ -89,12 +95,11 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="ff-bold min-h-[100dvh] bg-[var(--fb-bg)] sm:p-3 lg:p-4">
+    <div className="ff-bold ff-dash-shell h-[100dvh] overflow-hidden bg-[var(--fb-bg)]">
       <SidebarProvider collapsible="icon" storageKey="ff-dashboard-sidebar">
-        <div className="ff-dash-shell mx-auto flex h-[100dvh] w-full max-w-[1500px] overflow-hidden border-[var(--fb-line)] bg-[var(--fb-bg)] sm:h-[calc(100dvh-1.5rem)] sm:rounded-2xl sm:border lg:h-[calc(100dvh-2rem)]">
+        <div className="flex h-full w-full overflow-hidden bg-[var(--fb-bg)]">
           <DashboardSidebar
             onNewProject={openWizard}
-            onOpenPricing={openPricing}
             projects={projects}
           />
 
@@ -130,7 +135,7 @@ export function DashboardPage() {
             </header>
 
             <main className="ff-scrollbar flex-1 overflow-y-auto">
-              <div className="mx-auto max-w-[1200px] px-4 pb-16 pt-8 sm:px-8 sm:pb-16 sm:pt-10">
+              <div className="mx-auto max-w-[1440px] px-4 pb-16 pt-8 sm:px-8 sm:pb-16 sm:pt-10 xl:px-10">
                 <Routes>
                   <Route
                     index
@@ -143,27 +148,25 @@ export function DashboardPage() {
                       />
                     }
                   />
+                  <Route path="agents" element={<AgentsSection onNewProject={openWizardWithBrief} />} />
                   <Route
                     path="deployments"
                     element={
                       <DeploymentsSection loading={loading} onNewProject={openWizard} projects={projects} />
                     }
                   />
-                  <Route path="usage" element={<UsageSection onOpenPricing={openPricing} />} />
+                  <Route path="usage" element={<UsageSection onOpenBilling={openBilling} />} />
+                  <Route path="billing" element={<BillingSection />} />
                   <Route
                     path="integrations"
-                    element={
-                      <IntegrationsSection
-                        onOpenBilling={() => navigate('/dashboard/settings#billing')}
-                      />
-                    }
+                    element={<IntegrationsSection onOpenBilling={openBilling} />}
                   />
                   <Route path="profile" element={<ProfileSection onSignOut={handleSignOut} />} />
                   <Route
                     path="settings"
                     element={
                       <SettingsSection
-                        onOpenPricing={openPricing}
+                        onOpenBilling={openBilling}
                         onSignOut={handleSignOut}
                         projects={projects}
                       />

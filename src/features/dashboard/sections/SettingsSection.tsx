@@ -89,11 +89,11 @@ function ThemeOption({
 
 export function SettingsSection({
   projects,
-  onOpenPricing,
+  onOpenBilling,
   onSignOut,
 }: {
   projects: Project[];
-  onOpenPricing: () => void;
+  onOpenBilling: () => void;
   onSignOut: () => void;
 }) {
   const { profile } = useAuthStore();
@@ -196,11 +196,11 @@ export function SettingsSection({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button className={primaryButtonClass} onClick={onOpenPricing} type="button">
+                <button className={primaryButtonClass} onClick={onOpenBilling} type="button">
                   <CreditCard size={14} />
                   {paid ? 'Manage subscription' : 'Upgrade plan'}
                 </button>
-                <button className={secondaryButtonClass} onClick={onOpenPricing} type="button">
+                <button className={secondaryButtonClass} onClick={onOpenBilling} type="button">
                   Compare plans
                 </button>
               </div>

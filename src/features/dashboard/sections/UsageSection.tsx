@@ -35,7 +35,7 @@ function planPrice(planId: string) {
   return pack ? `₹${(pack.pricePaise / 100).toLocaleString('en-IN')}` : '₹0';
 }
 
-export function UsageSection({ onOpenPricing }: { onOpenPricing: () => void }) {
+export function UsageSection({ onOpenBilling }: { onOpenBilling: () => void }) {
   const { wallet, events, loading, error, refresh, loadEvents } = useCreditsStore();
   const [limit, setLimit] = useState(20);
 
@@ -60,11 +60,11 @@ export function UsageSection({ onOpenPricing }: { onOpenPricing: () => void }) {
       <SectionHeader
         actions={
           <>
-            <button className={secondaryButtonClass} onClick={onOpenPricing} type="button">
+            <button className={secondaryButtonClass} onClick={onOpenBilling} type="button">
               <ArrowUpRight size={14} />
               Compare plans
             </button>
-            <button className={primaryButtonClass} onClick={onOpenPricing} type="button">
+            <button className={primaryButtonClass} onClick={onOpenBilling} type="button">
               <Sparkles size={14} />
               {paid ? 'Manage plan' : 'Upgrade to Pro'}
             </button>
@@ -176,7 +176,7 @@ export function UsageSection({ onOpenPricing }: { onOpenPricing: () => void }) {
 
           <button
             className={cn(primaryButtonClass, 'mt-auto w-full justify-center')}
-            onClick={onOpenPricing}
+            onClick={onOpenBilling}
             type="button"
           >
             {paid ? 'Manage subscription' : 'Upgrade plan'}

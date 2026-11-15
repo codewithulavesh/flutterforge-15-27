@@ -85,7 +85,6 @@ function renderSidebar(initialEntry = '/dashboard') {
       <SidebarProvider>
         <DashboardSidebar
           onNewProject={vi.fn()}
-          onOpenPricing={vi.fn()}
           projects={PROJECTS}
         />
       </SidebarProvider>
@@ -122,6 +121,9 @@ describe('DashboardSidebar navigation', () => {
     expect(screen.getByRole('link', { name: /^Recent$/ }).getAttribute('href')).toBe(
       '/dashboard?sort=created',
     );
+    expect(screen.getByRole('link', { name: 'Agents' }).getAttribute('href')).toBe(
+      '/dashboard/agents',
+    );
     expect(screen.getByRole('link', { name: /^Deployments/ }).getAttribute('href')).toBe(
       '/dashboard/deployments',
     );
@@ -146,6 +148,14 @@ describe('DashboardSidebar navigation', () => {
       row.textContent?.trim(),
     );
     expect(activeRows.some((label) => label?.includes('Deployments'))).toBe(true);
+  });
+
+  it('opens plans and billing inside the dashboard', async () => {
+    renderSidebar('/dashboard/billing');
+
+    const billing = await screen.findByRole('link', { name: 'Plan & billing' });
+    expect(billing.getAttribute('href')).toBe('/dashboard/billing');
+    expect(billing.getAttribute('aria-current')).toBe('page');
   });
 
   it('distinguishes All projects from Recent in the sidebar', () => {

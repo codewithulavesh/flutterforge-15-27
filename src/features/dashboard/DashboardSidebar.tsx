@@ -69,11 +69,9 @@ function MenuIcon({ children }: { children: React.ReactNode }) {
 export function DashboardSidebar({
   projects,
   onNewProject,
-  onOpenPricing,
 }: {
   projects: Project[];
   onNewProject: () => void;
-  onOpenPricing: () => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -105,13 +103,14 @@ export function DashboardSidebar({
   const active = {
     allProjects: pathname === '/dashboard' && sortBy !== 'created',
     recentProjects: pathname === '/dashboard' && sortBy === 'created',
+    agents: pathname === '/dashboard/agents',
     usage: pathname === '/dashboard/usage',
     deployments: pathname === '/dashboard/deployments',
     integrations: pathname === '/dashboard/integrations',
     profile: pathname === '/dashboard/profile',
     shortcuts: pathname === '/dashboard/shortcuts',
-    settings: pathname === '/dashboard/settings',
-    billing: pathname === '/dashboard/settings' && location.hash === '#billing',
+    billing: pathname === '/dashboard/billing',
+    settings: pathname === '/dashboard/settings' || pathname === '/dashboard/billing',
   };
 
   useEffect(() => {
@@ -183,11 +182,6 @@ export function DashboardSidebar({
   const openNewProject = () => {
     closeMenus();
     onNewProject();
-  };
-
-  const openPricing = () => {
-    closeMenus();
-    onOpenPricing();
   };
 
   const NavIcon = ({ icon: Icon }: { icon: LucideIcon }) => (
@@ -373,8 +367,9 @@ export function DashboardSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   {...collapsedLabel('Agents')}
+                  isActive={active.agents}
                   onClick={closeMenus}
-                  render={<Link to="/agents" />}
+                  render={<Link to="/dashboard/agents" />}
                 >
                   <NavIcon icon={Sparkles} />
                   <span>Agents</span>
@@ -435,7 +430,7 @@ export function DashboardSidebar({
                           <SidebarMenuSubButton
                             isActive={active.billing}
                             onClick={closeMenus}
-                            render={<Link to="/dashboard/settings#billing" />}
+                            render={<Link to="/dashboard/billing" />}
                           >
                             Plan &amp; billing
                           </SidebarMenuSubButton>
@@ -644,20 +639,20 @@ export function DashboardSidebar({
                   <Gauge aria-hidden size={16} />
                   Usage &amp; credits
                 </Link>
-                <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
-                  onClick={openPricing}
-                  role="menuitem"
-                  type="button"
-                >
-                  <Sparkles aria-hidden size={16} />
-                  {planAction}
-                </button>
                 <Link
                   className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
                   onClick={closeMenus}
                   role="menuitem"
-                  to="/dashboard/settings#billing"
+                  to="/dashboard/billing"
+                >
+                  <Sparkles aria-hidden size={16} />
+                  {planAction}
+                </Link>
+                <Link
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={closeMenus}
+                  role="menuitem"
+                  to="/dashboard/billing"
                 >
                   <CreditCard aria-hidden size={16} />
                   Plan &amp; billing

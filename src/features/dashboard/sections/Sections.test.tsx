@@ -8,6 +8,8 @@ import { ProfileSection } from './ProfileSection';
 import { SettingsSection } from './SettingsSection';
 import { ShortcutsSection } from './ShortcutsSection';
 import { UsageSection } from './UsageSection';
+import { AgentsSection } from './AgentsSection';
+import { BillingSection } from './BillingSection';
 import type { Project } from '@/types';
 
 const {
@@ -139,6 +141,19 @@ beforeEach(() => {
   loadEventsMock.mockReset();
   setThemeMock.mockReset();
   toastMock.mockReset();
+
+  // The embedded pricing block animates cards into view with motion.
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    },
+  );
 });
 
 afterEach(() => cleanup());
@@ -171,7 +186,7 @@ describe('DeploymentsSection', () => {
 
 describe('UsageSection', () => {
   it('shows the balance, plan and recent credit activity', () => {
-    render(<UsageSection onOpenPricing={vi.fn()} />);
+    render(<UsageSection onOpenBilling={vi.fn()} />);
 
     expect(screen.getAllByText('420').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Pro plan').length).toBeGreaterThan(0);
@@ -181,13 +196,13 @@ describe('UsageSection', () => {
     expect(loadEventsMock).toHaveBeenCalledWith(20);
   });
 
-  it('hands plan management back to pricing', async () => {
+  it('hands plan management to the embedded billing page', async () => {
     const user = userEvent.setup();
-    const onOpenPricing = vi.fn();
-    render(<UsageSection onOpenPricing={onOpenPricing} />);
+    const onOpenBilling = vi.fn();
+    render(<UsageSection onOpenBilling={onOpenBilling} />);
 
     await user.click(screen.getByRole('button', { name: /Manage subscription/i }));
-    expect(onOpenPricing).toHaveBeenCalled();
+    expect(onOpenBilling).toHaveBeenCalled();
   });
 });
 
@@ -237,7 +252,7 @@ describe('SettingsSection', () => {
   it('switches the dashboard theme', async () => {
     const user = userEvent.setup();
     renderInRouter(
-      <SettingsSection onOpenPricing={vi.fn()} onSignOut={vi.fn()} projects={PROJECTS} />,
+      <SettingsSection onOpenBilling={vi.fn()} onSignOut={vi.fn()} projects={PROJECTS} />,
     );
 
     await user.click(screen.getByRole('button', { name: /^Light/ }));
@@ -246,15 +261,15 @@ describe('SettingsSection', () => {
 
   it('shows plan billing controls and signs out', async () => {
     const user = userEvent.setup();
-    const onOpenPricing = vi.fn();
+    const onOpenBilling = vi.fn();
     const onSignOut = vi.fn();
     renderInRouter(
-      <SettingsSection onOpenPricing={onOpenPricing} onSignOut={onSignOut} projects={PROJECTS} />,
+      <SettingsSection onOpenBilling={onOpenBilling} onSignOut={onSignOut} projects={PROJECTS} />,
     );
 
     expect(screen.getByText('credits remaining')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /Manage subscription/i }));
-    expect(onOpenPricing).toHaveBeenCalled();
+    expect(onOpenBilling).toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: /Sign out/i }));
     expect(onSignOut).toHaveBeenCalled();
@@ -269,5 +284,41 @@ describe('ShortcutsSection', () => {
     expect(screen.getByText('Workspace', { selector: 'h2' })).toBeTruthy();
     expect(screen.getByText('Focus project search')).toBeTruthy();
     expect(screen.getAllByText('Open the command palette').length).toBeGreaterThan(0);
+  });
+});
+
+describe('AgentsSection', () => {
+  it('opens the wizard with a typed brief', async () => {
+    const user = userEvent.setup();
+    const onNewProject = vi.fn();
+    render(<AgentsSection onNewProject={onNewProject} />);
+
+    await user.type(
+      screen.getByLabelText('Describe the app you want to build'),
+      'A habit tracker with streaks',
+    );
+    await user.click(screen.getByRole('button', { name: /Build this app/i }));
+
+    expect(onNewProject).toHaveBeenCalledWith('A habit tracker with streaks');
+  });
+
+  it('starts from a prompt library entry', async () => {
+    const user = userEvent.setup();
+    const onNewProject = vi.fn();
+    render(<AgentsSection onNewProject={onNewProject} />);
+
+    await user.click(screen.getByRole('button', { name: /Rename the app to "Orbit"/i }));
+
+    expect(onNewProject).toHaveBeenCalledWith(expect.stringContaining('Rename the app to "Orbit"'));
+  });
+});
+
+describe('BillingSection', () => {
+  it('shows the current plan and keeps plan changes inside the dashboard', () => {
+    renderInRouter(<BillingSection />);
+
+    expect(screen.getByText('Compare plans')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Current plan/i })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('link', { name: 'Free plan' }).getAttribute('href')).toBe('/dashboard');
   });
 });

@@ -28,6 +28,12 @@ interface PricingProps {
   description?: string;
   note?: string;
   className?: string;
+  /** Hide the heading block when the page already provides its own header. */
+  showHeading?: boolean;
+  /** Plan id to mark as active instead of showing a checkout action. */
+  currentPlanId?: string | null;
+  /** Called after Razorpay verifies a payment so the caller can refresh credits. */
+  onPurchaseComplete?: () => void;
 }
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -39,6 +45,9 @@ export function Pricing({
   description = 'Every plan exports real Flutter source. Paid tiers add more agent room, faster models, and shared workspaces.',
   note = 'Payments are processed securely by Razorpay. Currently running in test mode — no real charges are made.',
   className,
+  showHeading = true,
+  currentPlanId = null,
+  onPurchaseComplete,
 }: PricingProps) {
   const [isMonthly, setIsMonthly] = useState(true);
   const [paying, setPaying] = useState<string | null>(null);
@@ -55,11 +64,13 @@ export function Pricing({
       await startRazorpayCheckout(
         { plan: planId, period: isMonthly ? 'monthly' : 'yearly' },
         {
-          onSuccess: ({ payment_id }) =>
+          onSuccess: ({ payment_id }) => {
             setNotice({
               tone: 'success',
               text: `Payment verified (${payment_id}). Your ${planId === 'team' ? 'Team' : 'Pro'} workspace unlocks shortly — welcome to FlutterForge.`,
-            }),
+            });
+            onPurchaseComplete?.();
+          },
           onFailure: (message) => setNotice({ tone: 'error', text: message }),
           onDismiss: () => setNotice({ tone: 'error', text: 'Payment cancelled before it was completed.' }),
         },
@@ -106,20 +117,25 @@ export function Pricing({
   return (
     <section id="pricing" ref={sectionRef} className={cn('scroll-mt-28 px-4 py-20 sm:px-6', className)}>
       <div className="mx-auto max-w-[1440px]">
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-xl">
-            <p className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--fb-magenta)]" />
-              {eyebrow}
-            </p>
-            <h2 className="ffb-display mt-4 text-[clamp(40px,5.6vw,64px)]">{title}</h2>
-            <p className="mt-4 max-w-md text-[13px] leading-relaxed text-[var(--fb-muted)]">{description}</p>
-          </div>
+        <div className={cn('flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between', !showHeading && 'gap-4')}>
+          {showHeading && (
+            <div className="max-w-xl">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--fb-magenta)]" />
+                {eyebrow}
+              </p>
+              <h2 className="ffb-display mt-4 text-[clamp(40px,5.6vw,64px)]">{title}</h2>
+              <p className="mt-4 max-w-md text-[13px] leading-relaxed text-[var(--fb-muted)]">{description}</p>
+            </div>
+          )}
 
           <div
             role="group"
             aria-label="Billing period"
-            className="inline-flex w-fit shrink-0 items-center gap-2.5 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] p-1.5 pl-4 pr-3"
+            className={cn(
+              'inline-flex w-fit shrink-0 items-center gap-2.5 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] p-1.5 pl-4 pr-3',
+              !showHeading && 'ml-auto',
+            )}
           >
             <span
               aria-hidden="true"
@@ -176,6 +192,7 @@ export function Pricing({
             const value = isMonthly ? plan.price : plan.yearlyPrice;
             const billingNote =
               plan.price === 0 ? 'no card required' : isMonthly ? 'billed monthly' : 'billed annually';
+            const isCurrent = currentPlanId === plan.id;
 
             return (
               <motion.article
@@ -246,7 +263,17 @@ export function Pricing({
                   ))}
                 </ul>
 
-                {plan.id === 'free' ? (
+                {isCurrent ? (
+                  <button
+                    aria-current="true"
+                    className="mt-7 inline-flex h-11 w-full cursor-default items-center justify-center gap-2 rounded-full border border-current text-[12.5px] font-semibold opacity-55"
+                    disabled
+                    type="button"
+                  >
+                    <Check size={14} />
+                    Current plan
+                  </button>
+                ) : plan.id === 'free' ? (
                   <Link
                     to={plan.href}
                     className={cn(
