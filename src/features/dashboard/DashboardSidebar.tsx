@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowUpRight,
   BookOpen,
@@ -58,9 +58,6 @@ const REPO_URL = 'https://github.com/codewithulavesh/flutterforge';
 const ISSUES_URL = `${REPO_URL}/issues`;
 const RELEASES_URL = `${REPO_URL}/releases`;
 
-type ProjectSort = 'updated' | 'created' | 'name';
-type ProjectScope = 'all' | 'deployed';
-
 function MenuIcon({ children }: { children: React.ReactNode }) {
   return (
     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-[var(--fb-line)] bg-[var(--fb-soft)] text-[var(--fb-muted)]">
@@ -71,32 +68,16 @@ function MenuIcon({ children }: { children: React.ReactNode }) {
 
 export function DashboardSidebar({
   projects,
-  sortBy,
-  scope,
-  searching,
   onNewProject,
-  onShowProjects,
-  onShowDeployments,
   onOpenPricing,
-  onEditProfile,
-  onOpenUsage,
-  onOpenIntegrations,
-  onOpenShortcuts,
 }: {
   projects: Project[];
-  sortBy: ProjectSort;
-  scope: ProjectScope;
-  searching: boolean;
   onNewProject: () => void;
-  onShowProjects: (sort: ProjectSort) => void;
-  onShowDeployments: () => void;
   onOpenPricing: () => void;
-  onEditProfile: () => void;
-  onOpenUsage: () => void;
-  onOpenIntegrations: () => void;
-  onOpenShortcuts: () => void;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { profile, signOut } = useAuthStore();
   const { wallet, refresh } = useCreditsStore();
   const { theme, toggle } = useThemeStore();
@@ -104,6 +85,9 @@ export function DashboardSidebar({
 
   const collapsed = !isMobile && state === 'collapsed';
   const isDark = theme === 'dark';
+  const isMac =
+    typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+  const shortcutLabel = isMac ? 'Cmd B' : 'Ctrl B';
 
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
@@ -114,11 +98,32 @@ export function DashboardSidebar({
   const userRef = useRef<HTMLDivElement>(null);
   const refreshedCredits = useRef(false);
 
+  const pathname = location.pathname.replace(/\/+$/, '') || '/dashboard';
+  const sortParam = searchParams.get('sort');
+  const sortBy = sortParam === 'created' || sortParam === 'name' ? sortParam : 'updated';
+
+  const active = {
+    allProjects: pathname === '/dashboard' && sortBy !== 'created',
+    recentProjects: pathname === '/dashboard' && sortBy === 'created',
+    usage: pathname === '/dashboard/usage',
+    deployments: pathname === '/dashboard/deployments',
+    integrations: pathname === '/dashboard/integrations',
+    profile: pathname === '/dashboard/profile',
+    shortcuts: pathname === '/dashboard/shortcuts',
+    settings: pathname === '/dashboard/settings',
+    billing: pathname === '/dashboard/settings' && location.hash === '#billing',
+  };
+
   useEffect(() => {
     if (refreshedCredits.current) return;
     refreshedCredits.current = true;
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (active.settings) setSettingsOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active.settings]);
 
   useEffect(() => {
     if (!workspaceOpen && !userOpen) return;
@@ -164,21 +169,15 @@ export function DashboardSidebar({
     [projects],
   );
 
-  const openProject = (projectId: string) => {
-    setWorkspaceOpen(false);
-    setOpenMobile(false);
-    navigate(`/project/${projectId}`);
-  };
-
   const closeMenus = () => {
     setWorkspaceOpen(false);
     setUserOpen(false);
     setOpenMobile(false);
   };
 
-  const openPricing = () => {
+  const openProject = (projectId: string) => {
     closeMenus();
-    onOpenPricing();
+    navigate(`/project/${projectId}`);
   };
 
   const openNewProject = () => {
@@ -186,34 +185,9 @@ export function DashboardSidebar({
     onNewProject();
   };
 
-  const openEditProfile = () => {
+  const openPricing = () => {
     closeMenus();
-    onEditProfile();
-  };
-
-  const openUsage = () => {
-    closeMenus();
-    onOpenUsage();
-  };
-
-  const openIntegrations = () => {
-    closeMenus();
-    onOpenIntegrations();
-  };
-
-  const openShortcuts = () => {
-    closeMenus();
-    onOpenShortcuts();
-  };
-
-  const showProjects = (sort: ProjectSort) => {
-    closeMenus();
-    onShowProjects(sort);
-  };
-
-  const showDeployments = () => {
-    closeMenus();
-    onShowDeployments();
+    onOpenPricing();
   };
 
   const NavIcon = ({ icon: Icon }: { icon: LucideIcon }) => (
@@ -255,16 +229,14 @@ export function DashboardSidebar({
             }}
             type="button"
           >
-            <BrandLogo size={36} className="rounded-[10px] border border-[var(--fb-line)]" />
+            <BrandLogo className="rounded-[10px] border border-[var(--fb-line)]" size={36} />
             {!collapsed && (
               <>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14.5px] font-semibold leading-tight text-[var(--fb-ink)]">
                     FlutterForge
                   </span>
-                  <span className="mt-0.5 block truncate text-[12px] text-[var(--fb-dim)]">
-                    {planName}
-                  </span>
+                  <span className="mt-0.5 block truncate text-[12px] text-[var(--fb-dim)]">{planName}</span>
                 </span>
                 {!isMobile && (
                   <ChevronsUpDown aria-hidden className="shrink-0 text-[var(--fb-dim)]" size={14} />
@@ -278,21 +250,18 @@ export function DashboardSidebar({
               className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(21rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border border-[var(--fb-line)] bg-[var(--fb-elevated)] p-1.5 shadow-[0_28px_80px_-22px_rgba(0,0,0,0.6)] animate-in fade-in-0 zoom-in-95"
               role="menu"
             >
-              <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-[var(--fb-dim)]">
-                Workspaces
-              </p>
+              <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-[var(--fb-dim)]">Workspaces</p>
               <button
                 className="flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left transition-colors hover:bg-[var(--fb-soft)]"
                 onClick={() => {
-                  setWorkspaceOpen(false);
-                  setOpenMobile(false);
+                  closeMenus();
                   navigate('/dashboard');
                 }}
                 role="menuitem"
                 type="button"
               >
                 <MenuIcon>
-                  <BrandLogo size={18} className="rounded-[5px]" />
+                  <BrandLogo className="rounded-[5px]" size={18} />
                 </MenuIcon>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13.5px] font-medium text-[var(--fb-ink)]">
@@ -376,16 +345,18 @@ export function DashboardSidebar({
                       <SidebarMenuSub>
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton
-                            isActive={!searching && sortBy === 'updated'}
-                            onClick={() => showProjects('updated')}
+                            isActive={active.allProjects}
+                            onClick={closeMenus}
+                            render={<Link to="/dashboard" />}
                           >
                             All projects
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton
-                            isActive={!searching && sortBy === 'created'}
-                            onClick={() => showProjects('created')}
+                            isActive={active.recentProjects}
+                            onClick={closeMenus}
+                            render={<Link to="/dashboard?sort=created" />}
                           >
                             Recent
                           </SidebarMenuSubButton>
@@ -402,10 +373,8 @@ export function DashboardSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   {...collapsedLabel('Agents')}
-                  onClick={() => {
-                    setOpenMobile(false);
-                    navigate('/agents');
-                  }}
+                  onClick={closeMenus}
+                  render={<Link to="/agents" />}
                 >
                   <NavIcon icon={Sparkles} />
                   <span>Agents</span>
@@ -431,7 +400,11 @@ export function DashboardSidebar({
               <SidebarMenuItem>
                 <Collapsible onOpenChange={setSettingsOpen} open={settingsOpen}>
                   <CollapsibleTrigger asChild>
-                    <SidebarMenuButton {...collapsedLabel('Settings')} type="button">
+                    <SidebarMenuButton
+                      {...collapsedLabel('Settings')}
+                      isActive={active.settings}
+                      type="button"
+                    >
                       <NavIcon icon={Settings2} />
                       <span>Settings</span>
                       {!collapsed && (
@@ -451,6 +424,24 @@ export function DashboardSidebar({
                       <SidebarMenuSub>
                         <SidebarMenuSubItem>
                           <SidebarMenuSubButton
+                            isActive={active.settings && !active.billing}
+                            onClick={closeMenus}
+                            render={<Link to="/dashboard/settings" />}
+                          >
+                            Preferences
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            isActive={active.billing}
+                            onClick={closeMenus}
+                            render={<Link to="/dashboard/settings#billing" />}
+                          >
+                            Plan &amp; billing
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
                             onClick={(event) => {
                               event.stopPropagation();
                               toggle();
@@ -461,9 +452,6 @@ export function DashboardSidebar({
                               <span>{isDark ? 'Light mode' : 'Dark mode'}</span>
                             </span>
                           </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton onClick={openPricing}>Plan & billing</SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       </SidebarMenuSub>
                     </CollapsibleContent>
@@ -479,29 +467,40 @@ export function DashboardSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton {...collapsedLabel('Usage & credits')} onClick={openUsage}>
+                <SidebarMenuButton
+                  {...collapsedLabel('Usage & credits')}
+                  isActive={active.usage}
+                  onClick={closeMenus}
+                  render={<Link to="/dashboard/usage" />}
+                >
                   <NavIcon icon={Gauge} />
                   <span>Usage &amp; credits</span>
-                  {!collapsed && <SidebarMenuBadge>{credits != null ? credits.toLocaleString() : '—'}</SidebarMenuBadge>}
+                  {!collapsed && (
+                    <SidebarMenuBadge>{credits != null ? credits.toLocaleString() : '—'}</SidebarMenuBadge>
+                  )}
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
               <SidebarMenuItem>
                 <SidebarMenuButton
                   {...collapsedLabel('Deployments')}
-                  isActive={!searching && scope === 'deployed'}
-                  onClick={showDeployments}
+                  isActive={active.deployments}
+                  onClick={closeMenus}
+                  render={<Link to="/dashboard/deployments" />}
                 >
                   <NavIcon icon={Rocket} />
                   <span>Deployments</span>
-                  {!collapsed && deployedCount > 0 && (
-                    <SidebarMenuBadge>{deployedCount}</SidebarMenuBadge>
-                  )}
+                  {!collapsed && deployedCount > 0 && <SidebarMenuBadge>{deployedCount}</SidebarMenuBadge>}
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
               <SidebarMenuItem>
-                <SidebarMenuButton {...collapsedLabel('Integrations')} onClick={openIntegrations}>
+                <SidebarMenuButton
+                  {...collapsedLabel('Integrations')}
+                  isActive={active.integrations}
+                  onClick={closeMenus}
+                  render={<Link to="/dashboard/integrations" />}
+                >
                   <NavIcon icon={Plug} />
                   <span>Integrations</span>
                   {!collapsed && (
@@ -518,7 +517,12 @@ export function DashboardSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton {...collapsedLabel('Edit profile')} onClick={openEditProfile}>
+                <SidebarMenuButton
+                  {...collapsedLabel('Edit profile')}
+                  isActive={active.profile}
+                  onClick={closeMenus}
+                  render={<Link to="/dashboard/profile" />}
+                >
                   <NavIcon icon={UserRound} />
                   <span>Edit profile</span>
                   {!collapsed && (
@@ -528,10 +532,15 @@ export function DashboardSidebar({
               </SidebarMenuItem>
 
               <SidebarMenuItem>
-                <SidebarMenuButton {...collapsedLabel('Keyboard shortcuts')} onClick={openShortcuts}>
+                <SidebarMenuButton
+                  {...collapsedLabel('Keyboard shortcuts')}
+                  isActive={active.shortcuts}
+                  onClick={closeMenus}
+                  render={<Link to="/dashboard/shortcuts" />}
+                >
                   <NavIcon icon={Keyboard} />
                   <span>Keyboard shortcuts</span>
-                  {!collapsed && <SidebarMenuBadge>⌘B</SidebarMenuBadge>}
+                  {!collapsed && <SidebarMenuBadge>{shortcutLabel}</SidebarMenuBadge>}
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
@@ -617,24 +626,24 @@ export function DashboardSidebar({
               )}
               <div className="h-px bg-[var(--fb-line)]" />
               <div className="p-1.5">
-                <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
-                  onClick={openEditProfile}
+                <Link
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={closeMenus}
                   role="menuitem"
-                  type="button"
+                  to="/dashboard/profile"
                 >
                   <UserRound aria-hidden size={16} />
                   Edit profile
-                </button>
-                <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
-                  onClick={openUsage}
+                </Link>
+                <Link
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={closeMenus}
                   role="menuitem"
-                  type="button"
+                  to="/dashboard/usage"
                 >
                   <Gauge aria-hidden size={16} />
                   Usage &amp; credits
-                </button>
+                </Link>
                 <button
                   className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
                   onClick={openPricing}
@@ -644,15 +653,15 @@ export function DashboardSidebar({
                   <Sparkles aria-hidden size={16} />
                   {planAction}
                 </button>
-                <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
-                  onClick={openPricing}
+                <Link
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={closeMenus}
                   role="menuitem"
-                  type="button"
+                  to="/dashboard/settings#billing"
                 >
                   <CreditCard aria-hidden size={16} />
-                  Plan & billing
-                </button>
+                  Plan &amp; billing
+                </Link>
                 <button
                   className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
                   onClick={toggle}
@@ -662,15 +671,15 @@ export function DashboardSidebar({
                   {isDark ? <Sun aria-hidden size={16} /> : <Moon aria-hidden size={16} />}
                   {isDark ? 'Light mode' : 'Dark mode'}
                 </button>
-                <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
-                  onClick={openShortcuts}
+                <Link
+                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  onClick={closeMenus}
                   role="menuitem"
-                  type="button"
+                  to="/dashboard/shortcuts"
                 >
                   <Keyboard aria-hidden size={16} />
                   Keyboard shortcuts
-                </button>
+                </Link>
               </div>
               <div className="h-px bg-[var(--fb-line)]" />
               <div className="p-1.5">

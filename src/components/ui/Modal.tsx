@@ -13,15 +13,22 @@ interface ModalProps {
 
 export function Modal({ open, onClose, title, children, className, size = 'md' }: ModalProps) {
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    if (!open) return;
+    document.body.style.overflow = 'hidden';
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
     }
+    document.addEventListener('keydown', onKeyDown);
+
     return () => {
       document.body.style.overflow = '';
+      document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [onClose, open]);
 
   if (!open) return null;
 
@@ -36,11 +43,14 @@ export function Modal({ open, onClose, title, children, className, size = 'md' }
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
+        aria-label={title}
+        aria-modal="true"
         className={cn(
           'relative ff-card w-full p-4 sm:p-5 ff-fade-in max-h-[92vh] sm:max-h-[90vh] overflow-y-auto ff-scrollbar',
           sizes[size],
           className
         )}
+        role="dialog"
       >
         {title && (
           <div className="flex items-center justify-between mb-3 sm:mb-4 pb-2 border-b border-[var(--ff-border)]/50">
@@ -48,6 +58,7 @@ export function Modal({ open, onClose, title, children, className, size = 'md' }
               {title}
             </h2>
             <button
+              aria-label="Close dialog"
               onClick={onClose}
               className="ff-btn-ghost flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--ff-text-muted)] transition-colors hover:text-[var(--ff-text)]"
               title="Close"

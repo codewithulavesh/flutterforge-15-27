@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SidebarProvider } from '@/components/ui/sidebar';
@@ -80,35 +79,21 @@ const PROJECTS: Project[] = [
   },
 ];
 
-function renderSidebar(overrides: Partial<Parameters<typeof DashboardSidebar>[0]> = {}) {
-  const handlers = {
-    onEditProfile: vi.fn(),
-    onNewProject: vi.fn(),
-    onOpenIntegrations: vi.fn(),
-    onOpenPricing: vi.fn(),
-    onOpenShortcuts: vi.fn(),
-    onOpenUsage: vi.fn(),
-    onShowDeployments: vi.fn(),
-    onShowProjects: vi.fn(),
-  };
-  const view = render(
-    <MemoryRouter>
+function renderSidebar(initialEntry = '/dashboard') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
       <SidebarProvider>
         <DashboardSidebar
+          onNewProject={vi.fn()}
+          onOpenPricing={vi.fn()}
           projects={PROJECTS}
-          scope="deployed"
-          searching={false}
-          sortBy="updated"
-          {...handlers}
-          {...overrides}
         />
       </SidebarProvider>
     </MemoryRouter>,
   );
-  return { ...view, handlers };
 }
 
-describe('DashboardSidebar sections', () => {
+describe('DashboardSidebar navigation', () => {
   afterEach(() => cleanup());
 
   it('renders the Platform, Workspace and Account groups', () => {
@@ -117,31 +102,64 @@ describe('DashboardSidebar sections', () => {
     for (const label of ['Platform', 'Workspace', 'Account']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
-    for (const label of ['Usage & credits', 'Deployments', 'Integrations', 'Edit profile', 'Keyboard shortcuts', 'Support', "What's new"]) {
+    for (const label of [
+      'Usage & credits',
+      'Deployments',
+      'Integrations',
+      'Edit profile',
+      'Keyboard shortcuts',
+      'Support',
+      "What's new",
+    ]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
 
-  it('opens the account and workspace dialogs from the sidebar', async () => {
-    const user = userEvent.setup();
-    const { handlers } = renderSidebar();
+  it('links each section to its own dashboard route', () => {
+    renderSidebar();
 
-    await user.click(screen.getByRole('button', { name: 'Edit profile' }));
-    await user.click(screen.getByRole('button', { name: /^Usage & credits/ }));
-    await user.click(screen.getByRole('button', { name: 'Integrations' }));
-    await user.click(screen.getByRole('button', { name: /^Keyboard shortcuts/ }));
-
-    expect(handlers.onEditProfile).toHaveBeenCalledTimes(1);
-    expect(handlers.onOpenUsage).toHaveBeenCalledTimes(1);
-    expect(handlers.onOpenIntegrations).toHaveBeenCalledTimes(1);
-    expect(handlers.onOpenShortcuts).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: /^All projects$/ }).getAttribute('href')).toBe('/dashboard');
+    expect(screen.getByRole('link', { name: /^Recent$/ }).getAttribute('href')).toBe(
+      '/dashboard?sort=created',
+    );
+    expect(screen.getByRole('link', { name: /^Deployments/ }).getAttribute('href')).toBe(
+      '/dashboard/deployments',
+    );
+    expect(screen.getByRole('link', { name: /^Usage & credits/ }).getAttribute('href')).toBe(
+      '/dashboard/usage',
+    );
+    expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('href')).toBe(
+      '/dashboard/integrations',
+    );
+    expect(screen.getByRole('link', { name: /^Edit profile/ }).getAttribute('href')).toBe(
+      '/dashboard/profile',
+    );
+    expect(screen.getByRole('link', { name: /^Keyboard shortcuts/ }).getAttribute('href')).toBe(
+      '/dashboard/shortcuts',
+    );
   });
 
-  it('marks Deployments active and surfaces deployed counts and credits', () => {
-    const { container } = renderSidebar();
+  it('marks the current section active from the URL', () => {
+    const { container } = renderSidebar('/dashboard/deployments');
 
-    const active = container.querySelector('[data-active="true"]');
-    expect(active?.textContent).toContain('Deployments');
+    const activeRows = [...container.querySelectorAll('[data-active="true"]')].map((row) =>
+      row.textContent?.trim(),
+    );
+    expect(activeRows.some((label) => label?.includes('Deployments'))).toBe(true);
+  });
+
+  it('distinguishes All projects from Recent in the sidebar', () => {
+    const all = renderSidebar('/dashboard');
+    expect(all.container.querySelector('[aria-current="page"]')?.textContent).toContain('All projects');
+    all.unmount();
+
+    const recent = renderSidebar('/dashboard?sort=created');
+    expect(recent.container.querySelector('[aria-current="page"]')?.textContent).toContain('Recent');
+  });
+
+  it('surfaces credit and deployment counts', () => {
+    renderSidebar();
+
     expect(screen.getByText('100')).toBeTruthy();
     expect(screen.getByText('1')).toBeTruthy();
   });
