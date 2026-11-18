@@ -790,11 +790,12 @@ add('POST', '/api/platform/release/build', async ({ res, body, platform, princip
     throw new ValidationError(`target must be one of: ${RELEASE_TARGETS.join(', ')}`, { field: 'target' });
   }
   requirePermission(principal, 'workflow:start', projectId);
+  const osvPolicy = body?.osvPolicy === 'warn' ? 'warn' : 'block';
   const { run } = await platform.engine.start('release.build', {
     tenantId: principal.tenantId,
     projectId,
     actor: principal.userId,
-    input: { projectId, target },
+    input: { projectId, target, osvPolicy },
     idempotencyKey: typeof body?.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
   });
   sendJson(res, 202, { ok: true, run, created: true });
