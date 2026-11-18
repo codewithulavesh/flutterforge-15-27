@@ -152,4 +152,43 @@ export const PLATFORM_MIGRATIONS: readonly Migration[] = [
         ON token_usage (tenant_id, project_id, recorded_at DESC);
     `,
   },
+  {
+    id: '0003_code_intelligence',
+    up: `
+      -- Pillar 03: durable per-file symbol index. Rows are content-addressed so
+      -- a re-index only re-parses files whose sha256 changed. symbols_json
+      -- stores compact symbol/chunk records (name, kind, line, byte ranges,
+      -- chunk text hashes) — never credentials, never binary data.
+      CREATE TABLE IF NOT EXISTS project_code_index (
+        tenant_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        lines INTEGER NOT NULL,
+        symbols_json TEXT NOT NULL,
+        imports_json TEXT NOT NULL,
+        exports_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tenant_id, project_id, file_path)
+      );
+      CREATE INDEX IF NOT EXISTS idx_code_index_project
+        ON project_code_index (tenant_id, project_id, updated_at DESC);
+
+      -- Pillar 03: human/agent decisions that must survive sessions
+      -- (architecture choices, constraints, user preferences).
+      CREATE TABLE IF NOT EXISTS project_memory (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('decision', 'constraint', 'fact', 'summary')),
+        content TEXT NOT NULL,
+        source TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_project
+        ON project_memory (tenant_id, project_id, created_at DESC);
+    `,
+  },
 ];
