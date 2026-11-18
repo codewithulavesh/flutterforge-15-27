@@ -4,6 +4,7 @@
 
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "VITE_PREVIEW_API_URL"
+  NODE_VERSION = "24"
 
 # ── Single Page Application (SPA) fallback ─────────────────────────
 # The generation engine and preview server run on the user's machine (or the

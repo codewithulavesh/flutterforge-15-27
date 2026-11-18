@@ -217,7 +217,6 @@ export function generateSbom(input: SbomFileInput, now = () => new Date()): Gene
     warnings.push({ code: 'NO_LOCKFILE', message: 'pubspec.lock was not provided; package versions are unavailable.' });
   }
 
-  const lockedByName = new Map((locked ?? []).map((pkg) => [pkg.name, pkg]));
   const isSdk = new Set(['flutter', 'flutter_test', 'flutter_localizations']);
   const packages: SbomPackage[] = [];
 

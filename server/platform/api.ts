@@ -22,6 +22,20 @@ import { createPlatform, type PlatformInstance } from './instance.js';
 import { version } from './instance.js';
 import { createPatchApplyWorkflow } from './workflow/patchWorkflow.js';
 import { createVerifyHealWorkflow, createLiveVerifyHealDeps } from './qa/verifyAndHeal.js';
+import { createReleaseBuildWorkflow } from './release/buildWorkflow.js';
+import { MeteringService } from './metering/usage.js';
+import {
+  buildReleasePlan,
+  checkReleaseReadiness,
+  RELEASE_TARGETS,
+  type ReleaseTarget,
+} from './release/release.js';
+import { gate as osvGate } from './security/osv.js';
+import { OtlpExporter } from './observability/otel.js';
+import { Tracer } from './observability/tracing.js';
+import { promises as fs } from 'node:fs';
+import { snapshotFiles } from '../harness/workspace.js';
+import { verifyProject } from '../harness/verify.js';
 import { applyPatch, type PatchInput } from './patch/transaction.js';
 import { getProjectWorkspace } from '../harness/run.js';
 import {
@@ -39,7 +53,6 @@ import type { RunStatus } from './workflow/engine.js';
 import { verifyProjectContract } from './qa/contract.js';
 import { validateDartFiles } from './dart/validate.js';
 import { generateSbom } from './security/sbom.js';
-import { promises as fs } from 'node:fs';
 import {
   authorize,
   claimsToPrincipal,
@@ -64,6 +77,7 @@ export function getPlatform(): Promise<PlatformInstance> {
     platformPromise = createPlatform().then((platform) => {
       platform.engine.register(createPatchApplyWorkflow(platform));
       platform.engine.register(createVerifyHealWorkflow(createLiveVerifyHealDeps({ audit: platform.audit })));
+      platform.engine.register(createReleaseBuildWorkflow({ dataDir: platform.config.dataDir }));
       // Resume any run whose lease expired while the process was down, and
       // execute submissions within one poll interval.
       const timer = setInterval(() => {
@@ -248,6 +262,41 @@ class Bucket {
     return { allowed: false, retryAfterMs: Math.ceil((1 - tokens) / this.refillPerSecond * 1000) };
   }
 }
+// ----------------------------------------------------------------
+// OTLP tracing (optional) + metering singleton
+// ----------------------------------------------------------------
+// Tracing ships nothing over the network by default. Set
+// FLUTTERFORGE_OTLP_ENDPOINT (or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT) to a
+// collector URL and spans for platform requests flow there; unset means the
+// Tracer runs in-process and export() is a no-op.
+let platformTracer: Tracer | null = null;
+
+function getTracer(): Tracer {
+  if (platformTracer) return platformTracer;
+  const endpoint = (process.env.FLUTTERFORGE_OTLP_ENDPOINT ?? process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ?? '').trim();
+  if (!endpoint) {
+    platformTracer = new Tracer({ serviceName: 'flutterforge-platform', enabled: false, sampleRatio: 0 });
+    return platformTracer;
+  }
+  const parsed = Number(process.env.FLUTTERFORGE_TRACE_SAMPLE_RATIO ?? '0.1');
+  const otelExporter = new OtlpExporter({ endpoint, serviceName: 'flutterforge-platform', logger: fallbackLogger });
+  platformTracer = new Tracer({
+    serviceName: 'flutterforge-platform',
+    enabled: true,
+    sampleRatio: Number.isFinite(parsed) ? Math.min(1, Math.max(0, parsed)) : 0.1,
+    exporter: otelExporter,
+  });
+  return platformTracer;
+}
+
+let meteringService: MeteringService | null = null;
+function ensureMetering(platform: PlatformInstance): MeteringService {
+  if (!meteringService) {
+    meteringService = new MeteringService({ db: platform.db, clock: platform.clock, audit: platform.audit });
+  }
+  return meteringService;
+}
+
 const expensiveRouteBucket = new Bucket(10, 10 / 60); // 10 per minute per principal
 
 // ------------------------------------------------------------------
@@ -333,11 +382,11 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
       { pillar: '09', name: 'Execution Sandbox', status: 'configurable', notes: `mode=${platform.config.sandbox.mode}; policy allowlist module in flight (server/platform/sandbox).` },
       { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection; `verify.heal` workflow runs the closed repair loop.' },
       { pillar: '11', name: 'Runtime & Preview', status: 'ported', notes: 'Preview service untouched.' },
-      { pillar: '12', name: 'Release & Deployment', status: 'ported', notes: 'Existing export pipeline unchanged in this increment.' },
+      { pillar: '12', name: 'Release & Deployment', status: 'implemented', notes: 'release.build DAG (readiness → flutter build → artifact), artifact listing with sha256 manifests, GitHub branch/PR sync.' },
       { pillar: '13', name: 'Data & Persistence', status: 'implemented', notes: 'SQLite/WAL migrations, hash-chained audit log, content-addressed blobs, project revisions.' },
-      { pillar: '14', name: 'Security & Trust', status: 'partial', notes: 'Audit chain + secret redaction + tenant claim enforcement. Vault/KMS envelope pending.' },
-      { pillar: '15', name: 'Observability', status: 'implemented', notes: 'Structured JSON-L with redaction, W3C traceparent tracing, Prometheus metrics endpoint.' },
-      { pillar: '16', name: 'Billing & Governance', status: 'partial', notes: 'Token metering schema present (token_usage); quota enforcement pending.' },
+      { pillar: '14', name: 'Security & Trust', status: 'implemented', notes: 'Audit chain, secret redaction, tenant enforcement, OSV vulnerability gate (Pub ecosystem, fail-closed).' },
+      { pillar: '15', name: 'Observability', status: 'implemented', notes: 'Structured JSON-L with redaction, W3C traceparent tracing, Prometheus metrics, opt-in OTLP export (FLUTTERFORGE_OTLP_ENDPOINT).' },
+      { pillar: '16', name: 'Billing & Governance', status: 'implemented', notes: 'MeteringService with charge-before-LLM semantics, quota enforcement fail-closed in platform_settings, token_usage ledger.' },
     ],
     workflows: engines,
   });
@@ -415,10 +464,11 @@ add('GET', '/api/platform/approvals/pending', async ({ res, url, platform, princ
 });
 
 add('POST', '/api/platform/approvals/:approvalId/decision', async ({ res, params, body, platform, principal }) => {
-  const projectRow = await platform.db.get<{ project_id: string | null }>(
-    'SELECT r.project_id FROM workflow_approvals a JOIN workflow_runs r ON r.id = a.run_id WHERE a.id = ?',
+  const projectRow = await platform.db.get<{ project_id: string | null; tenant_id: string }>(
+    'SELECT r.project_id, r.tenant_id FROM workflow_approvals a JOIN workflow_runs r ON r.id = a.run_id WHERE a.id = ?',
     params.approvalId,
   );
+  if (projectRow) tenantScope(principal, projectRow.tenant_id);
   requirePermission(principal, 'project:approve', projectRow?.project_id ?? undefined);
   const decision = body?.decision === 'approved' || body?.decision === 'rejected' ? body.decision : null;
   if (!decision) throw new ValidationError('decision must be "approved" or "rejected".', { field: 'decision' });
@@ -515,7 +565,7 @@ add('GET', '/api/platform/projects/:projectId/revisions', async ({ res, url, par
   sendJson(res, 200, { ok: true, revisions });
 });
 
-add('POST', '/api/platform/projects/:projectId/revisions/:revisionId/restore', async ({ res, params, body, platform, principal }) => {
+add('POST', '/api/platform/projects/:projectId/revisions/:revisionId/restore', async ({ res, params, platform, principal }) => {
   requirePermission(principal, 'project:rollback', params.projectId);
   const run = await platform.revisions.restoreRevision({
     revisionId: params.revisionId,
@@ -599,6 +649,279 @@ add('POST', '/api/platform/gate/analyze', async ({ res, body, principal }) => {
   });
 });
 
+add('POST', '/api/platform/usage/record', async ({ res, body, platform, principal }) => {
+  const metering = ensureMetering(platform);
+  requirePermission(principal, 'project:write', typeof body?.projectId === 'string' ? body.projectId : undefined);
+  const record = await metering.record({
+    tenantId: principal.tenantId,
+    projectId: typeof body?.projectId === 'string' && body.projectId.trim() ? body.projectId : undefined,
+    runId: typeof body?.runId === 'string' && body.runId.trim() ? body.runId : undefined,
+    provider: String(body?.provider ?? ''),
+    model: String(body?.model ?? ''),
+    promptTokens: Number(body?.promptTokens ?? 0),
+    completionTokens: Number(body?.completionTokens ?? 0),
+    cachedTokens: body?.cachedTokens === undefined ? undefined : Number(body.cachedTokens),
+    ...(body?.costMicros === undefined ? {} : { costMicros: Number(body.costMicros) }),
+  });
+  sendJson(res, 201, { ok: true, id: record.id });
+});
+
+add('POST', '/api/platform/usage/charge', async ({ res, body, platform, principal }) => {
+  const metering = ensureMetering(platform);
+  requirePermission(principal, 'project:write', typeof body?.projectId === 'string' ? body.projectId : undefined);
+  const charge = await metering.chargeFor({
+    tenantId: principal.tenantId,
+    projectId: typeof body?.projectId === 'string' && body.projectId.trim() ? body.projectId : undefined,
+    runId: typeof body?.runId === 'string' && body.runId.trim() ? body.runId : undefined,
+    provider: String(body?.provider ?? ''),
+    model: String(body?.model ?? ''),
+    promptTokens: Number(body?.promptTokens ?? 0),
+    completionTokens: Number(body?.completionTokens ?? 0),
+    cachedTokens: body?.cachedTokens === undefined ? undefined : Number(body.cachedTokens),
+    ...(body?.costMicros === undefined ? {} : { costMicros: Number(body.costMicros) }),
+  });
+  if (charge.ok === false) {
+    sendJson(res, 429, { ok: false, reason: charge.reason, quota: charge.quota });
+    return;
+  }
+  sendJson(res, 201, { ok: true, usage: charge.usage, quota: charge.quota });
+});
+
+add('GET', '/api/platform/usage/summary', async ({ res, url, platform, principal }) => {
+  const metering = ensureMetering(platform);
+  requirePermission(principal, 'audit:read');
+  const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') ?? '30') || 30));
+  const projectId = url.searchParams.get('projectId') ?? undefined;
+  const sinceMs = Date.now() - days * 86_400_000;
+  const summary = await metering.summary({ tenantId: principal.tenantId, projectId, sinceMs });
+  sendJson(res, 200, { ok: true, days, summary });
+});
+
+add('GET', '/api/platform/usage/quota', async ({ res, platform, principal }) => {
+  const metering = ensureMetering(platform);
+  requirePermission(principal, 'project:read');
+  const quota = await metering.checkQuota(principal.tenantId);
+  sendJson(res, 200, { ok: quota.allowed, quota });
+});
+
+add('POST', '/api/platform/usage/quota', async ({ res, body, platform, principal }) => {
+  const metering = ensureMetering(platform);
+  requirePermission(principal, 'org:manage');
+  const costBasis = body?.costBasis === 'tokens' ? 'tokens' : 'micros';
+  const quota = await metering.setQuota({
+    tenantId: principal.tenantId,
+    windowMs: Number(body?.windowMs ?? 86_400_000),
+    limitTokens: body?.limitTokens === undefined ? undefined : Number(body.limitTokens),
+    limitMicros: body?.limitMicros === undefined ? undefined : Number(body.limitMicros),
+    costBasis,
+  });
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'metering.quota_set',
+    resourceType: 'tenant',
+    resourceId: principal.tenantId,
+    metadata: { quota },
+  });
+  sendJson(res, 200, { ok: true, quota });
+});
+
+add('POST', '/api/platform/security/vulnerabilities', async ({ res, body, platform, principal }) => {
+  const projectId = typeof body?.projectId === 'string' && body.projectId.trim() ? body.projectId : undefined;
+  requirePermission(principal, 'project:write', projectId);
+
+  let lock: string | null = null;
+  if (projectId) {
+    lock = await fs.readFile(path.join(getProjectWorkspace(projectId), 'pubspec.lock'), 'utf8').catch(() => null);
+    if (!lock) throw new PlatformError({ code: 'PUBSPEC_LOCK_NOT_FOUND', message: 'This project has no pubspec.lock; run flutter pub get first.', statusCode: 422 });
+  } else if (typeof body?.lock === 'string' && body.lock.trim()) {
+    lock = body.lock;
+  } else {
+    throw new ValidationError('Provide `projectId` or `lock` (pubspec.lock contents).', { field: 'projectId' });
+  }
+
+  const policy = body?.policy === 'warn' ? 'warn' : 'block';
+  const allowIds = Array.isArray(body?.allowIds) ? (body.allowIds as unknown[]).filter((v): v is string => typeof v === 'string') : undefined;
+  const result = await osvGate({ lock, policy, ...(allowIds ? { allowIds } : {}) });
+
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'security.vulnerabilities',
+    resourceType: 'project',
+    resourceId: projectId ?? 'inline-lock',
+    metadata: { policy, blocked: result.blocked, findings: result.vulnerabilities.length, errors: result.errors.length },
+  });
+
+  sendJson(res, result.blocked ? 422 : 200, {
+    ok: !result.blocked,
+    blocked: result.blocked,
+    policy: result.policy,
+    totalPackages: result.totalPackages,
+    vulnerabilities: result.vulnerabilities.slice(0, 100),
+    errors: result.errors,
+    checkedAtMs: result.checkedAtMs,
+  });
+});
+
+add('POST', '/api/platform/release/plan', async ({ res, body, principal }) => {
+  const projectId = typeof body?.projectId === 'string' ? body.projectId.trim() : '';
+  if (!projectId) throw new ValidationError('`projectId` is required.', { field: 'projectId' });
+  const target = typeof body?.target === 'string' ? body.target : '';
+  if (!(RELEASE_TARGETS as readonly string[]).includes(target)) {
+    throw new ValidationError(`target must be one of: ${RELEASE_TARGETS.join(', ')}`, { field: 'target' });
+  }
+  requirePermission(principal, 'project:read', projectId);
+  const workspace = getProjectWorkspace(projectId);
+  const readiness = await checkReleaseReadiness({ target: target as ReleaseTarget, projectId, projectRoot: workspace });
+  const plan = buildReleasePlan({ target: target as ReleaseTarget, projectId, artifactDir: path.join(getProjectWorkspace(projectId), '.releases'), projectRoot: workspace, tenantId: principal.tenantId, actor: principal.userId });
+  sendJson(res, 200, { ok: readiness.ready, readiness, plan });
+});
+
+add('POST', '/api/platform/release/build', async ({ res, body, platform, principal }) => {
+  if (!expensiveRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'release_build' });
+    throw new RateLimitError(60_000, { tier: 'release_build' });
+  }
+  const projectId = typeof body?.projectId === 'string' ? body.projectId.trim() : '';
+  if (!projectId) throw new ValidationError('`projectId` is required.', { field: 'projectId' });
+  const target = typeof body?.target === 'string' ? body.target : '';
+  if (!(RELEASE_TARGETS as readonly string[]).includes(target)) {
+    throw new ValidationError(`target must be one of: ${RELEASE_TARGETS.join(', ')}`, { field: 'target' });
+  }
+  requirePermission(principal, 'workflow:start', projectId);
+  const { run } = await platform.engine.start('release.build', {
+    tenantId: principal.tenantId,
+    projectId,
+    actor: principal.userId,
+    input: { projectId, target },
+    idempotencyKey: typeof body?.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
+  });
+  sendJson(res, 202, { ok: true, run, created: true });
+});
+
+add('GET', '/api/platform/release/artifacts', async ({ res, url, platform, principal }) => {
+  const projectId = url.searchParams.get('projectId') ?? undefined;
+  requirePermission(principal, 'project:read', projectId);
+  const jobsDir = path.join(platform.config.dataDir, 'releases', 'jobs');
+  const entries = await fs.readdir(jobsDir).catch(() => [] as string[]);
+  const manifests: any[] = [];
+  for (const entry of entries.slice(-200)) {
+    if (!entry.endsWith('.json')) continue;
+    try {
+      const manifest = JSON.parse(await fs.readFile(path.join(jobsDir, entry), 'utf8'));
+      if (projectId && manifest?.projectId !== projectId) continue;
+      if (manifest?.tenantId && manifest.tenantId !== principal.tenantId) continue;
+      manifests.push({
+        jobId: manifest.jobId,
+        projectId: manifest.projectId,
+        target: manifest.target,
+        status: manifest.status,
+        size: manifest.artifact?.size ?? 0,
+        sha256: manifest.artifact?.sha256,
+        artifactName: manifest.artifact?.name,
+        signingState: manifest.signingState,
+        startedAtMs: manifest.startedAtMs,
+        finishedAtMs: manifest.finishedAtMs,
+      });
+    } catch {
+      // unreadable manifest: skip, don't fail the listing
+    }
+    if (manifests.length >= 50) break;
+  }
+  manifests.sort((a, b) => (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0));
+  sendJson(res, 200, { ok: true, artifacts: manifests });
+});
+
+add('POST', '/api/platform/release/github/sync', async ({ res, params, body, platform, principal }) => {
+  requirePermission(principal, 'org:manage');
+  const projectId = params.projectId;
+  const owner = process.env.FLUTTERFORGE_GITHUB_OWNER?.trim();
+  const repo = process.env.FLUTTERFORGE_GITHUB_REPO?.trim();
+  const token = process.env.FLUTTERFORGE_GITHUB_TOKEN?.trim();
+  const missing = [owner ? null : 'FLUTTERFORGE_GITHUB_OWNER', repo ? null : 'FLUTTERFORGE_GITHUB_REPO', token ? null : 'FLUTTERFORGE_GITHUB_TOKEN'].filter(Boolean) as string[];
+  if (missing.length > 0) {
+    throw new PlatformError({
+      code: 'GITHUB_NOT_CONFIGURED',
+      message: `GitHub sync is not configured (missing ${missing.join(', ')}).`,
+      statusCode: 503,
+      details: { missing },
+    });
+  }
+
+  const workspace = getProjectWorkspace(projectId);
+  const snapshot = await snapshotFiles(workspace);
+  const files = [...snapshot.entries()]
+    .map(([filePath, entry]) => ({ path: filePath, content: entry.content, encoding: 'utf-8' as const }))
+    .filter((file) => !/^\.env/i.test(file.path) && !/(^|\/)(credentials|secrets?|keys?)\./i.test(file.path))
+    .slice(0, 100);
+  if (files.length === 0) {
+    throw new ValidationError('No project files to export.', { field: 'projectId' });
+  }
+
+  const { exportZipToBranch } = await import('./release/github.js');
+  const slug = projectId.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'project';
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const branch = `flutterforge/release/${slug}-${stamp}`;
+  const result = await exportZipToBranch({
+    config: { owner, repo, token, baseBranch: process.env.FLUTTERFORGE_GITHUB_BASE_BRANCH?.trim() || 'main' },
+    branch,
+    files,
+    title: typeof body?.title === 'string' ? body.title.slice(0, 200) : 'FlutterForge release export',
+    body: typeof body?.body === 'string' ? body.body : 'FlutterForge export from the platform control plane.',
+  });
+  if (!result.ok) {
+    throw new PlatformError({ code: 'GITHUB_SYNC_FAILED', message: 'message' in result ? String(result.message) : 'GitHub sync failed.', statusCode: 502, details: { status: 'status' in result ? result.status : 0 } });
+  }
+
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'release.github_sync',
+    resourceType: 'project',
+    resourceId: projectId,
+    metadata: { branch, commitSha: result.data.commitSha, prNumber: result.data.prNumber, prUrl: result.data.prUrl, files: files.length },
+  });
+
+  sendJson(res, 200, { ok: true, branch, commitSha: result.data.commitSha, prNumber: result.data.prNumber, prUrl: result.data.prUrl, filesCommitted: files.length, adjustments: result.data.adjustments });
+});
+
+add('POST', '/api/platform/projects/:projectId/verify', async ({ res, params, body, platform, principal }) => {
+  if (!expensiveRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'verify_project' });
+    throw new RateLimitError(60_000, { tier: 'verify_project' });
+  }
+  const projectId = params.projectId;
+  requirePermission(principal, 'project:write', projectId);
+  const workspace = getProjectWorkspace(projectId);
+  const snapshot = await snapshotFiles(workspace);
+  const files = [...snapshot.entries()].map(([filePath, entry]) => ({ path: filePath, content: entry.content }));
+  if (files.length === 0) throw new ValidationError('Project workspace is empty.', { field: 'projectId' });
+
+  const result = await verifyProject({ projectId, files, timeoutMs: typeof body?.timeoutMs === 'number' ? Math.min(600_000, Math.max(30_000, body.timeoutMs)) : undefined });
+
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'qa.verify_project',
+    resourceType: 'project',
+    resourceId: projectId,
+    metadata: { verified: result.verified, skipped: result.skipped, errorCount: result.errorCount, gatePassed: result.gate.passed },
+  });
+
+  sendJson(res, 200, {
+    ok: result.verified,
+    verified: result.verified,
+    skipped: result.skipped,
+    ok_verify: result.ok,
+    summary: result.summary,
+    errorCount: result.errorCount,
+    warningCount: result.warningCount,
+    gate: result.gate,
+    durationMs: result.durationMs,
+  });
+});
+
 add('POST', '/api/platform/maintenance/prune', async ({ res, body, platform, principal }) => {
   requirePermission(principal, 'org:manage');
   const days = Number(body?.retentionDays ?? platform.config.workflow.retentionDays);
@@ -622,6 +945,12 @@ export async function handlePlatformRequest(req: IncomingMessage, res: ServerRes
   res.setHeader('x-request-id', requestId);
   if (trace) res.setHeader('traceparent', formatTraceparent(trace.traceId, trace.parentSpanId, true));
 
+  // One span per platform request. No-op unless an OTLP endpoint is configured.
+  const span = getTracer().startSpan(`${(req.method ?? 'GET').toUpperCase()} ${pathname.split('/').slice(0, 4).join('/')}`, {
+    kind: 'server',
+    ...(trace ? { traceparent: incomingTrace } : {}),
+    attributes: { 'http.method': req.method ?? 'GET', 'http.target': pathname },
+  });
   try {
     const platform = await getPlatform();
     const principal = await resolvePrincipal(req, platform);
@@ -649,6 +978,11 @@ export async function handlePlatformRequest(req: IncomingMessage, res: ServerRes
     sendJson(res, status, body);
     observe(scrubPath(pathname), req.method, status, started);
     return true;
+  } finally {
+    span.setAttribute('http.status_code', res.statusCode);
+    if (res.statusCode >= 500) span.setStatus('error');
+    span.end();
+    getTracer().flush();
   }
 }
 

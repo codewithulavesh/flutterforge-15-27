@@ -13,6 +13,8 @@ interface Series {
   values: Map<string, number>;
   counts?: number[];
   sum?: number;
+  /** Observations above the largest finite bucket — always counted in +Inf. */
+  overflow?: number;
 }
 
 interface MetricFamily {
@@ -94,7 +96,7 @@ export class MetricsRegistry {
               : `le="${buckets[index]}"`;
             lines.push(`${family.name}_bucket{${bucketLabels}} ${cumulative}`);
           }
-          const total = counts.reduce((sum, count) => sum + count, 0);
+          const total = counts.reduce((sum, count) => sum + count, 0) + (item.overflow ?? 0);
           const infLabels = item.labels ? `${item.labels},le="+Inf"` : 'le="+Inf"';
           lines.push(`${family.name}_bucket{${infLabels}} ${total}`);
           lines.push(`${family.name}_sum${suffix} ${item.sum ?? 0}`);
@@ -191,8 +193,10 @@ export class Histogram extends Instrument {
         break;
       }
     }
-    // The +Inf bucket is derived in render(), so overflow needs no slot.
-    void placed;
+    if (!placed) {
+      // Above the largest finite bucket — keep +Inf and _count honest.
+      series.overflow = (series.overflow ?? 0) + 1;
+    }
     series.sum = (series.sum ?? 0) + seconds;
   }
 

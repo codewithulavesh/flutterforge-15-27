@@ -1,11 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Editor, { type BeforeMount, type OnMount } from '@monaco-editor/react';
+import Editor, { loader, type BeforeMount, type OnMount } from '@monaco-editor/react';
+// Core editor API only — full 'monaco-editor' would pull every language and
+// feature (~5 MB). Dart has no built-in Monaco language anyway; tokenization
+// happens as plaintext/generic, same as before.
+import * as monaco from 'monaco-editor/editor/editor.api';
+import editorWorker from 'monaco-editor/editor/editor.worker?worker';
 import { FileCode2, X, Save } from 'lucide-react';
 import { useProjectStore } from '@/stores/project.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { toast } from '@/components/ui/Toast';
 import { Skeleton, SkeletonLines } from '@/components/ui/Skeleton';
 import { cn } from '@/utils/cn';
+
+/**
+ * Bundle Monaco from node_modules instead of loading it from the jsdelivr
+ * CDN at runtime. Without this the Code view is dead in offline/packaged
+ * desktop builds and leaks usage to a third party. The editor worker is
+ * enough for basic editing; unknown languages fall back to it gracefully.
+ */
+self.MonacoEnvironment = {
+  getWorker: () => new editorWorker(),
+};
+loader.config({ monaco });
 
 /** Shown while the Monaco shards download and the editor initialises. */
 function EditorLoadingFallback() {

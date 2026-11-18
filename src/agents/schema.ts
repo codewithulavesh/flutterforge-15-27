@@ -65,7 +65,7 @@ function toNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-function coerce(node: SchemaNode, value: unknown, path: string, _warnings: string[]): unknown {
+function coerce(node: SchemaNode, value: unknown): unknown {
   if (node.kind === 'array' && !Array.isArray(value) && value != null) return [value];
   if (node.kind === 'boolean' && typeof value === 'string') return toBoolean(value) ?? value;
   if (node.kind === 'number' && typeof value === 'string') return toNumber(value) ?? value;
@@ -82,7 +82,7 @@ function walkCoerced(
   const errors: string[] = [];
   const push = (message: string) => errors.push(`${path}: ${message}`);
 
-  const coerceHere = coerce(node, input, path, warnings);
+  const coerceHere = coerce(node, input);
 
   switch (node.kind) {
     case 'string': {

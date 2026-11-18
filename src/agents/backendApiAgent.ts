@@ -219,7 +219,7 @@ function generateSupabaseServiceFallback(pkgName: string, tables: Array<{ name: 
       final response = await _client.from('${tableName}').select().order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(response as List);
     } catch (e) {
-      throw Exception('Failed to fetch ${tableName}: \$e');
+      throw Exception('Failed to fetch ${tableName}: $e');
     }
   }
 
@@ -228,7 +228,7 @@ function generateSupabaseServiceFallback(pkgName: string, tables: Array<{ name: 
       final response = await _client.from('${tableName}').insert(data).select().single();
       return response as Map<String, dynamic>;
     } catch (e) {
-      throw Exception('Failed to create ${tableName}: \$e');
+      throw Exception('Failed to create ${tableName}: $e');
     }
   }
 
@@ -236,7 +236,7 @@ function generateSupabaseServiceFallback(pkgName: string, tables: Array<{ name: 
     try {
       await _client.from('${tableName}').update(data).eq('id', id);
     } catch (e) {
-      throw Exception('Failed to update ${tableName}: \$e');
+      throw Exception('Failed to update ${tableName}: $e');
     }
   }
 
@@ -244,7 +244,7 @@ function generateSupabaseServiceFallback(pkgName: string, tables: Array<{ name: 
     try {
       await _client.from('${tableName}').delete().eq('id', id);
     } catch (e) {
-      throw Exception('Failed to delete ${tableName}: \$e');
+      throw Exception('Failed to delete ${tableName}: $e');
     }
   }`).join('\n');
 
@@ -282,7 +282,7 @@ class AuthService {
       debugPrint('[AuthService] Sign up: \${response.user?.email}');
       return response;
     } catch (e) {
-      throw Exception('Sign up failed: \$e');
+      throw Exception('Sign up failed: $e');
     }
   }
 
@@ -292,7 +292,7 @@ class AuthService {
       debugPrint('[AuthService] Signed in: \${response.user?.email}');
       return response;
     } catch (e) {
-      throw Exception('Sign in failed: \$e');
+      throw Exception('Sign in failed: $e');
     }
   }
 
@@ -301,7 +301,7 @@ class AuthService {
       await _client.auth.signOut();
       debugPrint('[AuthService] Signed out');
     } catch (e) {
-      throw Exception('Sign out failed: \$e');
+      throw Exception('Sign out failed: $e');
     }
   }
 
@@ -310,7 +310,7 @@ class AuthService {
       final attrs = UserAttributes(email: email, password: password);
       return await _client.auth.updateUser(attrs);
     } catch (e) {
-      throw Exception('Profile update failed: \$e');
+      throw Exception('Profile update failed: $e');
     }
   }
 
@@ -318,7 +318,7 @@ class AuthService {
     try {
       await _client.auth.resetPasswordForEmail(email);
     } catch (e) {
-      throw Exception('Password reset failed: \$e');
+      throw Exception('Password reset failed: $e');
     }
   }
 }

@@ -51,7 +51,7 @@ export class Database {
   private readonly statements = new Map<string, StatementSync>();
   private readonly verbose: boolean;
   private closed = false;
-  private transactionDepth = 0;
+  private transactionQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: DatabaseOptions) {
     this.file = options.file;
@@ -136,9 +136,25 @@ export class Database {
   /**
    * Write transaction. Nested calls become savepoints, so repositories can
    * compose without knowing whether they are already inside a transaction.
+   * Top-level transactions are serialized through a FIFO queue: two callers
+   * must never interleave statements on the shared connection (one caller's
+   * COMMIT would otherwise commit the other's unfinished work).
    */
-  async transaction<T>(work: (tx: TransactionContext) => Promise<T>): Promise<T> {
+  transaction<T>(work: (tx: TransactionContext) => Promise<T>): Promise<T> {
     this.assertOpen();
+    if (this.transactionDepth > 0) {
+      // Already inside a transaction on this connection — run inline as a savepoint.
+      return this.runTransaction(work);
+    }
+    const task = this.transactionQueue.then(() => this.runTransaction(work));
+    // Keep the queue alive even when a transaction fails; the caller sees the error.
+    this.transactionQueue = task.catch(() => undefined);
+    return task;
+  }
+
+  private transactionDepth = 0;
+
+  private async runTransaction<T>(work: (tx: TransactionContext) => Promise<T>): Promise<T> {
     const depth = this.transactionDepth;
     const savepoint = `sp_${depth}`;
     this.transactionDepth += 1;

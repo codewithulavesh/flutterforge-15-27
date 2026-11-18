@@ -173,6 +173,7 @@ const PERMISSION_SET: ReadonlySet<string> = new Set(PERMISSIONS);
 const RESOURCE_TYPE_SET: ReadonlySet<string> = new Set(RESOURCE_TYPES);
 const OWN = Object.prototype.hasOwnProperty;
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+// eslint-disable-next-line no-control-regex -- intentional: rejects control characters in identifiers
 const IDENTIFIER = /^[^\u0000-\u001F\u007F\s]+$/;
 const MAX_IDENTIFIER_LENGTH = 256;
 

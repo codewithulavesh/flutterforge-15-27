@@ -43,13 +43,13 @@ export async function verifySupabaseConnection(projectRef: string, personalAcces
     return { ok: false, error: 'That does not look like a Supabase personal access token (sbp_…).' };
   }
 
-  const { res } = await api(`/v1/projects/${encodeURIComponent(ref)}`, pat);
+  const { res, text, json } = await api(`/v1/projects/${encodeURIComponent(ref)}`, pat);
   if (res.status === 401) return { ok: false, error: 'Token is invalid or lacks the `projects:read` scope — regenerate it at supabase.com/dashboard/account/tokens.' };
   if (res.status === 403) return { ok: false, error: 'Token authenticates but lacks access to that project — check its scopes.' };
   if (res.status === 404) return { ok: false, error: `No project with ref ${ref}. Double-check the ref at supabase.com/dashboard/project/${ref}/settings/general.` };
-  if (!res.ok) return { ok: false, error: `Supabase rejected verification (${res.status}). ${await res.text().catch(() => '')}` };
+  if (!res.ok) return { ok: false, error: `Supabase rejected verification (${res.status}). ${text.slice(0, 300)}` };
 
-  const body = (await res.json().catch(() => undefined)) as { name?: string; status?: string; region?: string } | undefined;
+  const body = json as { name?: string; status?: string; region?: string } | undefined;
   return {
     ok: true,
     project: { ref, name: body?.name, status: body?.status, region: body?.region },

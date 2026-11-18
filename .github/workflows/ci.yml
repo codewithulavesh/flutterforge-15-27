@@ -1,0 +1,146 @@
+# FlutterForge monorepo — CI gate (no deploys; release pipeline is server-side).
+#
+# Node version rationale: the engine ships node:sqlite usage. On Node 22
+# (22.5+) node:sqlite is still experimental and requires the
+# --experimental-sqlite flag. Node 24 ships node:sqlite unflagged/stable, so we
+# pin Node 24 here instead of relying on the ubuntu-latest default (which may
+# be 22). See https://nodejs.org/api/sqlite.html
+#
+# Lint note: `npm run lint` (whole repo) is advisory for now. `npm run lint:platform`
+# is a hard gate scoped to the platform/agent/orchestrator/chat lane.
+# `npm run check` (typecheck + test:server + build) a mandatory gate instead
+# of relying on the per-job steps.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (PR pushes, branch pushes).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: CI gates, it does not publish or deploy.
+permissions:
+  contents: read
+
+env:
+  NODE_ENV: test
+  CI: true
+  FLUTTERFORGE_AUTH_MODE: local
+  FLUTTERFORGE_DATA_DIR: ${{ runner.temp }}/platform
+
+jobs:
+  quality:
+    name: Quality (env, typecheck, lint, platform tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Environment sanity check
+        run: node scripts/ci/check-env.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Server typecheck (tsc → dist-server)
+        # src-only tsc does not cover server/; the Dockerfile runtime runs these files.
+        run: npm run build:server
+      - name: Lint (whole repo, advisory)
+        # Whole-repo lint debt is tracked separately and allowed to fail.
+        continue-on-error: true
+        run: npm run lint
+      - name: Lint (platform-scoped, hard gate)
+        # The platform lane (server/platform, agent pipeline, chat surface) must
+        # stay at zero lint findings; CI fails on any regression. Whole-repo
+        # debt uses the advisory step above instead.
+        continue-on-error: false
+        run: npm run lint:platform
+      - name: Platform server tests
+        run: npm run test:platform
+
+  frontend:
+    name: Frontend (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Frontend test suite
+        run: npx vitest run
+
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Server test suite
+        run: npm run test:server
+
+  build:
+    name: Build (vite)
+    needs: [quality, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Assert build output
+        run: test -f dist/index.html
+
+  docker:
+    name: Docker image smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Build image
+        run: docker build -t flutterforge:ci .
+      - name: Start container
+        run: |
+          docker run -d --name flutterforge-ci -p 8787:8787 flutterforge:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/health > /dev/null 2>&1; then
+              echo "engine is up after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "engine did not become healthy" >&2
+          docker logs flutterforge-ci >&2 || true
+          exit 1
+      - name: Cleanup
+        if: always()
+        run: docker rm -f flutterforge-ci || true

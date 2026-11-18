@@ -19,7 +19,7 @@ test('sanitizeSdkConstraint resets an impossible lower bound (Flutter version in
   const input = 'environment:\n  sdk: ">=3.24.0 <4.0.0"\n  flutter: "3.24.0"\n';
   const result = sanitizeSdkConstraint(input, { dartVersion: '3.13.4' });
   assert.ok(result.changed);
-  assert.match(result.content, /^  sdk: '>=3\.0\.0 <4\.0\.0'$/m);
+  assert.match(result.content, /^ {2}sdk: '>=3\.0\.0 <4\.0\.0'$/m);
   assert.ok(!result.content.includes('sdk: sdk:'));
   assert.ok(result.note.includes('exceeds the installed Dart'));
 });
@@ -28,7 +28,7 @@ test('sanitizeSdkConstraint widens an upper bound that excludes the installed SD
   const input = "environment:\n  sdk: '>=3.4.0 <3.10.0'\n";
   const result = sanitizeSdkConstraint(input, { dartVersion: '3.13.4' });
   assert.ok(result.changed);
-  assert.match(result.content, /^  sdk: '>=3\.0\.0 <4\.0\.0'$/m);
+  assert.match(result.content, /^ {2}sdk: '>=3\.0\.0 <4\.0\.0'$/m);
 });
 
 test('sanitizeSdkConstraint repairs unparsable junk', () => {
@@ -58,7 +58,7 @@ test('sanitizeFlutterConstraint drops a pin the installed Flutter cannot satisfy
   const input = 'environment:\n  sdk: ">=3.0.0 <4.0.0"\n  flutter: "4.99.0"\n';
   const result = sanitizeFlutterConstraint(input, { flutterVersion: '3.47.5' });
   assert.ok(result.changed);
-  assert.ok(!/^  flutter:/m.test(result.content));
+  assert.ok(!/^ {2}flutter:/m.test(result.content));
   assert.ok(result.content.includes('sdk: ">=3.0.0 <4.0.0"'));
 });
 

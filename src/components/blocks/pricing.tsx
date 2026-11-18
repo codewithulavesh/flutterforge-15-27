@@ -6,6 +6,7 @@ import { Check, Loader2, Star } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { startRazorpayCheckout } from '@/lib/razorpay';
+import { useCreditsStore } from '@/stores/credits.store';
 import { cn } from '@/utils/cn';
 
 export interface PricingPlan {
@@ -64,12 +65,28 @@ export function Pricing({
       await startRazorpayCheckout(
         { plan: planId, period: isMonthly ? 'monthly' : 'yearly' },
         {
-          onSuccess: ({ payment_id }) => {
-            setNotice({
-              tone: 'success',
-              text: `Payment verified (${payment_id}). Your ${planId === 'team' ? 'Team' : 'Pro'} workspace unlocks shortly — welcome to FlutterForge.`,
-            });
-            onPurchaseComplete?.();
+          onSuccess: ({ payment_id, order_id, signature }) => {
+            void (async () => {
+              setPaying(planId);
+              const activated = await useCreditsStore.getState().creditPlan(planId as 'pro' | 'team', {
+                orderId: order_id,
+                paymentId: payment_id,
+                signature,
+              });
+              setPaying(null);
+              if (activated.ok) {
+                setNotice({
+                  tone: 'success',
+                  text: `Payment verified (${payment_id}). Your ${planId === 'team' ? 'Team' : 'Pro'} plan is active and plan credits were added.`,
+                });
+              } else {
+                setNotice({
+                  tone: 'error',
+                  text: `Payment verified but we could not activate the plan automatically: ${activated.error ?? 'unknown error'}. Contact support with payment id ${payment_id} and it will be applied.`,
+                });
+              }
+              onPurchaseComplete?.();
+            })();
           },
           onFailure: (message) => setNotice({ tone: 'error', text: message }),
           onDismiss: () => setNotice({ tone: 'error', text: 'Payment cancelled before it was completed.' }),

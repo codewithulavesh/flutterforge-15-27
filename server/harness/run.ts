@@ -279,6 +279,19 @@ export async function runGeneration(input: RunGenerationInput) {
       }
     }
 
+    // A fatal error mid-stream invalidates the run even when some files were
+    // written — reporting "success" for a crashed engine is how half-written
+    // projects ship to preview. The workspace (and its partial files) is kept
+    // for inspection, but the run must be reported as failed.
+    if (harnessError) {
+      const error: any = new Error(
+        `The generation engine failed mid-run: ${harnessError.message ?? String(harnessError)}. The workspace was kept; re-run to continue.`,
+      );
+      error.code = 'HARNESS_FAILED';
+      error.partialFiles = result.files.length;
+      throw error;
+    }
+
     if (!result.success && result.files.length === 0) {
       const detail = harnessError?.message
         || (exitEvent?.stderr ? exitEvent.stderr.split('\n').slice(-4).join(' ') : '')

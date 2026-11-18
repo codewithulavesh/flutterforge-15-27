@@ -11,7 +11,7 @@ import type { SSEAgentEvent, SSEFileReadyEvent } from '@/agent/streamEvents';
  * it does not appear in the chat activity.
  */
 
-export type ActivityStatus = 'running' | 'success' | 'error' | 'stopped';
+export type ActivityStatus = 'running' | 'success' | 'error' | 'stopped' | 'interrupted';
 
 export interface ActivityRun {
   id: string;
@@ -217,6 +217,12 @@ function hydrate(projectId: string): Pick<ActivityState, 'run' | 'events' | 'fil
     if (!raw) return empty;
     const parsed = JSON.parse(raw) as { projectId?: string; run?: ActivityRun | null; events?: ActivityEvent[] };
     if (parsed.projectId !== projectId || !Array.isArray(parsed.events)) return empty;
+    // A persisted run can never still be executing after a reload — the
+    // process that was running it is gone. Mark it interrupted so the UI stops
+    // displaying an eternal "FlutterForge Agent working · NNs" banner.
+    const hydratedRun = parsed.run && parsed.run.status === 'running'
+      ? { ...parsed.run, status: 'interrupted' as ActivityStatus }
+      : (parsed.run ?? null);
     const files: Record<string, FileActivity> = {};
     let plan: AgentPlan | null = null;
     let validation: ValidationReport | null = null;
@@ -228,7 +234,7 @@ function hydrate(projectId: string): Pick<ActivityState, 'run' | 'events' | 'fil
       if (event.kind === 'error') buildErrors.push(event.message);
     }
     return {
-      run: parsed.run ?? null,
+      run: hydratedRun,
       events: parsed.events,
       files,
       plan,

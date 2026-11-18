@@ -56,6 +56,7 @@ export interface CreateRequestContextOptions {
   idFactory?: () => string;
 }
 
+// eslint-disable-next-line no-control-regex -- intentional: rejects control characters in identifiers
 const IDENTIFIER = /^[^\u0000-\u001F\u007F\s]+$/;
 const SCOPE = /^[A-Za-z0-9*:_./-]+$/;
 const BEARER = /^Bearer ([A-Za-z0-9._~+/=-]+)$/;
@@ -192,6 +193,8 @@ export interface ClaimsPrincipal {
   tenantId: string | null;
   roles: readonly Role[];
   projectRoles: Readonly<Record<string, Role>>;
+  /** API-key scopes from the token, if any. Passed through to RBAC. Undefined = unrestricted. */
+  scopes: readonly string[] | undefined;
 }
 
 /**
@@ -227,11 +230,18 @@ export function mapClaimsToPrincipal(payload: unknown): ClaimsPrincipal | null {
     ? parseProjectRoles(projectRolesSelection.value)
     : {};
 
+  const scopeSelection = hasOwn(payload, CLAIM_SCOPES)
+    ? { present: true, value: payload[CLAIM_SCOPES] }
+    : pick(payload, ['scopes', 'scope']);
+  // No scope claim → undefined (unrestricted), never [] (nothing allowed).
+  const scopes = scopeSelection.present ? parseScopes(scopeSelection.value) : undefined;
+
   return {
     userId,
     tenantId,
     roles: Object.freeze(roles),
     projectRoles: Object.freeze(projectRoles),
+    scopes: scopes === undefined ? undefined : Object.freeze(scopes),
   };
 }
 
@@ -257,11 +267,7 @@ export function createRequestContext(
     throw new TypeError('claims are missing a usable subject identifier.');
   }
 
-  const claims = input.claims as Record<string, unknown>;
-  const scopeSelection = hasOwn(claims, CLAIM_SCOPES)
-    ? { present: true, value: claims[CLAIM_SCOPES] }
-    : pick(claims, ['scopes', 'scope']);
-  const scopes = scopeSelection.present ? parseScopes(scopeSelection.value) : [];
+  const scopes = mapped.scopes ?? [];
 
   const requestId = input.requestId === undefined
     ? normalizeId(idFactory(), 'requestId')
@@ -303,5 +309,7 @@ export function claimsToPrincipal(claims: unknown): Principal | null {
     tenantId: mapped.tenantId,
     roles: mapped.roles,
     projectRoles: mapped.projectRoles,
+    // Pass API-key scopes through so RBAC can further restrict permissions.
+    scopes: mapped.scopes,
   };
 }

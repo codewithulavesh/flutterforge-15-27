@@ -286,7 +286,7 @@ test('verify endpoint requires files and never verifies unsafe or incomplete pro
   assert.match(noPubspecBody.summary, /pubspec\.yaml/);
 });
 
-test('preview compiler builds and serves the app from the same origin', async () => {
+test('preview compiler builds and serves the app on an isolated origin', async () => {
   const files = [
     { path: 'pubspec.yaml', content: 'name: preview_app\n' },
     { path: 'lib/main.dart', content: 'void main() {}\n' },

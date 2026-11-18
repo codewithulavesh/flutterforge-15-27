@@ -5,6 +5,7 @@ import {
   Download as DownloadIcon,
   Eye,
   FolderTree,
+  GitBranch,
   History,
   LayoutGrid,
   MoreHorizontal,
@@ -49,6 +50,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   Code2,
   TerminalSquare,
   History,
+  GitBranch,
   Settings: SettingsIcon,
   Download: DownloadIcon,
 };

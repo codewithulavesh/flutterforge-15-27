@@ -23,6 +23,23 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
+  // Server-side Node code is not DOM code: browser globals produced phantom
+  // `no-undef` findings on `process`/`Buffer`. The `<any>` on SQLite rows is a
+  // deliberate choice at the database boundary — keep it off only there.
+  {
+    files: ['server/**/*.ts', 'scripts/**/*.ts'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        ...globals.node,
+      },
+      sourceType: 'module',
+    },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   }
 );

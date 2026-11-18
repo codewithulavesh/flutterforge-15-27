@@ -121,7 +121,7 @@ export function DashboardSidebar({
 
   useEffect(() => {
     if (active.settings) setSettingsOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [active.settings]);
 
   useEffect(() => {

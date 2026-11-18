@@ -182,7 +182,7 @@ export async function runFrontendBuilderAgent(state: ProjectState): Promise<Part
   - Use REAL data types from the models above
   - Show REAL ${domain} content (not generic items)
   - Implement REAL user interactions for a ${domain} app
-  - Include domain-specific widgets (e.g. ${getDomainWidgetHints(domain, screen.name)})
+  - Include domain-specific widgets (e.g. ${getDomainWidgetHints(domain)})
 
   Also generate any small reusable widget extracted from this screen.
   Use the // FILE: format for each file.`,
@@ -372,7 +372,7 @@ function canonicalizeOutputPath(rawPath: string, featureName: string, primaryFil
   return `lib/features/${featureName}/screens/${primaryFileName}`;
 }
 
-function getDomainWidgetHints(domain: string, screenName: string): string {
+function getDomainWidgetHints(domain: string): string {
   const hints: Record<string, string> = {
     ecommerce: 'ProductCard with image+price+rating, CartBadge, FilterChip row, PriceTag widget',
     fitness: 'WorkoutCard with progress ring, ExerciseSetRow, CalorieCounter, StreakBadge',
@@ -398,10 +398,9 @@ function generateDomainScreen(
   modelFiles: string[],
   className?: string,
 ): string {
-  const featureName = screen.id || screen.name.replace('Screen', '').toLowerCase();
-  const widgetClass = className ?? deriveScreenClassName(screen.name);
+    const widgetClass = className ?? deriveScreenClassName(screen.name);
   const title = screen.name.replace('Screen', '').replace(/([A-Z])/g, ' $1').trim();
-  const mockData = getDomainMockData(domain, screen.name);
+  const mockData = getDomainMockData(domain);
 
   return `import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -820,7 +819,7 @@ class _ShimmerCardState extends State<_ShimmerCard> with SingleTickerProviderSta
 `;
 }
 
-function getDomainMockData(domain: string, screenName: string): Array<Record<string, unknown>> {
+function getDomainMockData(domain: string): Array<Record<string, unknown>> {
   const mockSets: Record<string, Array<Record<string, unknown>>> = {
     ecommerce: [
       { id: '1', title: 'Wireless Noise-Cancelling Headphones', subtitle: 'Sony • Electronics', badge: 'In Stock', badgeColor: 'green' },
@@ -1203,6 +1202,6 @@ function findOffTokenColorLiterals(content: string, tokenHexes: Set<string>): st
  * whitespace (logical NOT) or quotes (punctuation inside strings).
  */
 function countNonNullAssertions(content: string): number {
-  const matches = content.match(/[A-Za-z0-9_\)\]]!(?=[.\[\),;:]|\s|$)/g);
+  const matches = content.match(/[A-Za-z0-9_)\]]!(?=[.[),;:]|\s|$)/g);
   return matches ? matches.length : 0;
 }

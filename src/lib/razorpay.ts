@@ -41,6 +41,8 @@ export interface CheckoutPlan {
 export interface PaymentSuccess {
   payment_id: string;
   order_id: string;
+  /** Passed through so the caller can activate the plan server-side. */
+  signature: string;
 }
 
 export interface CheckoutHandlers {
@@ -68,13 +70,22 @@ export async function startRazorpayCheckout(plan: CheckoutPlan, handlers: Checko
     return;
   }
 
+  // Plan orders are bound to the signed-in user — the server needs the id to
+  // grant credits to the right account after checkout.
+  const { session } = useAuthStore.getState();
+  const user = session?.user;
+  if (!user?.id) {
+    handlers.onFailure('Sign in before upgrading so we can attach the plan to your account.');
+    return;
+  }
+
   // 1. Create the order server-side (server holds the secret price table).
   let createRes: Response;
   try {
     createRes = await fetch('/api/create-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: plan.plan, period: plan.period }),
+      body: JSON.stringify({ plan: plan.plan, period: plan.period, userId: user.id }),
     });
   } catch {
     handlers.onFailure('Could not reach the payment service. Is the engine running (npm run server)?');
@@ -94,9 +105,6 @@ export async function startRazorpayCheckout(plan: CheckoutPlan, handlers: Checko
     handlers.onFailure(error instanceof Error ? error.message : 'Failed to load Razorpay.');
     return;
   }
-
-  const { session } = useAuthStore.getState();
-  const user = session?.user;
 
   const RazorpayConstructor = window.Razorpay as new (options: Record<string, unknown>) => { open(): void };
   const modal = new RazorpayConstructor({
@@ -131,6 +139,7 @@ export async function startRazorpayCheckout(plan: CheckoutPlan, handlers: Checko
           handlers.onSuccess({
             payment_id: verified.payment_id || response.razorpay_payment_id,
             order_id: response.razorpay_order_id,
+            signature: response.razorpay_signature,
           });
         } else {
           handlers.onFailure(verified.error || 'Payment could not be verified. If the amount was deducted, contact support.');

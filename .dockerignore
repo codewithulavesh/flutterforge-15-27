@@ -1,0 +1,37 @@
+# Dependencies (installed inside the image)
+node_modules
+
+# VCS and CI
+.git
+.github
+.gitignore
+
+# Secrets and local environment — never shipped in an image layer
+.env
+.env.*
+!.env.local.example
+
+# Build outputs (rebuilt inside the image)
+dist
+dist-server
+release
+build
+
+# Harness runtime data (workspaces, caches, SDK downloads)
+.flutterforge
+harness-workspaces
+.agent-cache
+
+# Docs, reports and samples
+docs
+*.pdf
+*.html
+!index.html
+
+# Misc
+.DS_Store
+*.log
+coverage
+.tmp
+preview-infra
+supabase

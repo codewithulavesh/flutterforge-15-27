@@ -298,7 +298,7 @@ function DockMenu({
       aliveRef.current = false;
       window.clearTimeout(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {
@@ -916,7 +916,7 @@ export default function Dock({
         press.cleanup();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const closeMenu = useCallback((restore?: boolean) => {

@@ -157,7 +157,7 @@ export function createEventProjector({ workspace, snapshotBefore, emit }: EventP
       const existing = emitted.get(normalizedPath);
       if (existing && existing.content === content) return;
       const artifact: ProjectorFileArtifact = { path: normalizedPath, content, action, language: languageForPath(normalizedPath) };
-      emitted.set(relativePath, artifact);
+      emitted.set(normalizedPath, artifact);
       emit('file_ready', {
         path: artifact.path,
         content: artifact.content,
@@ -401,7 +401,6 @@ export function createEventProjector({ workspace, snapshotBefore, emit }: EventP
     const validation = validateProject(files);
     currentStep = 6;
     agentEvent('validation', validation.summary, {
-      generatedFiles: files,
       validationReport: {
         isValid: validation.isValid,
         issues: validation.issues,
@@ -417,7 +416,9 @@ export function createEventProjector({ workspace, snapshotBefore, emit }: EventP
 
     const summary = finalText || `Generated ${files.length} files with the DeepSeek Harness engine.`;
     currentStep = 7;
-    agentEvent('completed', `Harness finished: ${files.length} file(s) ready.`, { generatedFiles: files });
+    // File bodies already flowed as individual `file_ready` frames — do not
+    // resend the entire project inside the completion event.
+    agentEvent('completed', `Harness finished: ${files.length} file(s) ready.`);
     const succeeded = !exit?.aborted
       && !exit?.timedOut
       && (exit?.code === 0 || exit?.code === null || exit === undefined || files.length > 0);

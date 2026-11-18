@@ -124,28 +124,31 @@ export class AuditLog {
 
   async verify(options: { tenantId?: string; limit?: number } = {}): Promise<AuditVerification> {
     const limit = Math.min(100_000, Math.max(1, options.limit ?? 10_000));
-    const rows = options.tenantId
-      ? await this.db.all<AuditRow>(
-        'SELECT * FROM audit_log WHERE tenant_id = ? ORDER BY seq ASC LIMIT ?',
-        options.tenantId,
-        limit,
-      )
+
+    // A tenant-scoped verification cannot validate linkage from a filtered
+    // row set (a tenant's first entry points at a global predecessor), so
+    // the chain is always walked in full and tenant filtering only affects
+    // which entries are counted toward `checked`.
+    const tenantId = options.tenantId;
+    const rows = tenantId
+      ? await this.db.all<AuditRow>('SELECT * FROM audit_log ORDER BY seq ASC LIMIT 100000')
       : await this.db.all<AuditRow>('SELECT * FROM audit_log ORDER BY seq ASC LIMIT ?', limit);
 
     let previous = GENESIS_HASH;
     let headHash = GENESIS_HASH;
     let checked = 0;
+    let tenantChecked = 0;
 
     for (const row of rows) {
       checked += 1;
       const metadata = safeParse(row.metadata_json);
       if (metadata === null) {
-        return { ok: false, checked, firstBadSeq: row.seq, reason: 'metadata is not valid JSON', headHash };
+        return { ok: false, checked: tenantId ? tenantChecked : checked, firstBadSeq: row.seq, reason: 'metadata is not valid JSON', headHash };
       }
       if (row.prev_hash !== previous) {
         return {
           ok: false,
-          checked,
+          checked: tenantId ? tenantChecked : checked,
           firstBadSeq: row.seq,
           reason: 'previous-hash linkage is broken',
           headHash,
@@ -163,13 +166,14 @@ export class AuditLog {
         createdAt: row.created_at,
       });
       if (expected !== row.hash) {
-        return { ok: false, checked, firstBadSeq: row.seq, reason: 'entry hash does not match its contents', headHash };
+        return { ok: false, checked: tenantId ? tenantChecked : checked, firstBadSeq: row.seq, reason: 'entry hash does not match its contents', headHash };
       }
       previous = row.hash;
       headHash = row.hash;
+      if (row.tenant_id === tenantId) tenantChecked += 1;
     }
 
-    return { ok: true, checked, headHash };
+    return { ok: true, checked: tenantId ? tenantChecked : checked, headHash };
   }
 
   async list(options: { tenantId?: string; limit?: number; afterSeq?: number } = {}): Promise<AuditEntry[]> {

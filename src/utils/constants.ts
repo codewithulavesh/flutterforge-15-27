@@ -141,6 +141,7 @@ export const SIDEBAR_SECTIONS = [
     label: 'PROJECT',
     items: [
       { id: 'versions', label: 'Versions', icon: 'History' },
+      { id: 'revisions', label: 'Revisions', icon: 'GitBranch' },
       { id: 'settings', label: 'Settings', icon: 'Settings' },
       { id: 'export', label: 'Export', icon: 'Download' },
     ],

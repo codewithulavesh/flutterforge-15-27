@@ -604,7 +604,7 @@ class RegionAnalyzer {
 
   private tryParseDeclarationInner(i: number, enclosing: string | null): number {
     const mods = this.parser.collectModifiers(i);
-    let j = mods.next;
+    const j = mods.next;
     if (j >= this.toks.length) return i;
 
     const token = this.toks[j];
@@ -695,7 +695,7 @@ class RegionAnalyzer {
       isStatic: mods.values.has('static'),
       ...(enclosing ? { enclosing } : {}),
     });
-    let next = split.afterName;
+    const next = split.afterName;
     if (this.toks[next]?.value === '=') {
       const skipped = this.parser.skipInitializer(next + 1);
       if (skipped.delimiter === ',') return this.parseMoreDeclarators(skipped.next + 1, mods.values, enclosing);

@@ -82,6 +82,7 @@ const DEFAULT_MAX_ENTRIES = 10_000;
 const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
 const MAX_KEY_LENGTH = 1024;
 const MAX_CAPACITY = 1_000_000_000;
+// eslint-disable-next-line no-control-regex -- intentional: rejects control characters in rate-limit keys
 const KEY_PATTERN = /^[^\s\u0000-\u001F\u007F]+$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

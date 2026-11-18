@@ -100,7 +100,6 @@ export interface TransactionOptions {
 }
 
 const JOURNAL_FILE = 'journal.json';
-const META_DIR = '.flutterforge';
 const BLOCKED_SEGMENTS = new Set(['.git', '.flutterforge', '.dsh', 'node_modules']);
 const LOCK_STALE_MS = 10 * 60_000;
 
@@ -518,6 +517,25 @@ export class PatchTransaction {
       throw new PlatformError({ code: 'PATCH_BAD_STATE', message: `Cannot commit a ${this.journal.state} transaction.`, statusCode: 409 });
     }
 
+    // Pre-apply precondition check. Files may have changed on disk since
+    // prepare() hashed them (manual edit in the editor, a formatter, another
+    // agent). Refuse to destroy that work: the commit decision is not yet
+    // durable, so throwing here leaves the workspace untouched.
+    for (const entry of this.journal.entries) {
+      if (!entry.original.existed || !entry.original.hash) continue;
+      const target = await assertSafeTarget(this.journal.workspaceRoot, entry.path);
+      const current = await fs.readFile(target).catch(() => null);
+      const currentHash = current ? sha256(current) : null;
+      if (currentHash !== entry.original.hash) {
+        throw new PlatformError({
+          code: 'PATCH_TARGET_CHANGED',
+          message: `${entry.path} changed on disk after it was staged; the patch was not applied. Re-read the file and retry.`,
+          statusCode: 409,
+          details: { path: entry.path },
+        });
+      }
+    }
+
     const started = this.now();
     this.journal.state = 'committing';
     await this.persist();
@@ -636,7 +654,12 @@ async function applyJournal(journal: Journal, directory: string): Promise<PatchC
         changes.push({ path: entry.path, action: 'unchanged', size: 0 });
         continue;
       }
-      await fs.unlink(target);
+      // Recovery replays 'committing' journals after a crash: a delete that
+      // already happened must not fail the roll-forward.
+      await fs.unlink(target).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return;
+        throw error;
+      });
       await fsyncDirectory(path.dirname(target));
       changes.push({ path: entry.path, action: 'deleted', ...(beforeHash ? { beforeHash } : {}), size: entry.original.size ?? 0 });
       continue;

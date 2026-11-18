@@ -12,12 +12,11 @@
  * step safe to retry.
  */
 import path from 'node:path';
-import type { WorkflowDefinition, StepContext } from './engine.js';
+import type { WorkflowDefinition } from './engine.js';
 import { PlatformError, ValidationError } from '../kernel/errors.js';
 import { applyPatch, normalizePatchPath, type PatchInput } from '../patch/transaction.js';
 import { getProjectWorkspace } from '../../harness/run.js';
 import type { PlatformInstance } from '../instance.js';
-import { AuditLog } from '../audit/auditLog.js';
 
 const SECRET_PATTERNS: RegExp[] = [
   /\bsk-[A-Za-z0-9_-]{16,}\b/,
@@ -204,7 +203,7 @@ export function validateFiles(files: PatchInput[]): ValidationFinding[] {
 
     const extension = path.extname(relative).toLowerCase();
     if (codeExtensions.has(extension)) {
-      findings.push(...balancedDelimiters(content, relative, extension === '.dart'));
+      findings.push(...balancedDelimiters(content, relative));
     }
 
     if (path.basename(relative) === 'pubspec.yaml') {
@@ -232,7 +231,7 @@ export function validateFiles(files: PatchInput[]): ValidationFinding[] {
  * to unbalanced brackets anywhere — including inside interpolations — is a
  * validation error, never a silent success.
  */
-export function balancedDelimiters(source: string, relative: string, _dartStyle = true): ValidationFinding[] {
+export function balancedDelimiters(source: string, relative: string): ValidationFinding[] {
   const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
   const openers = new Set(['{', '(', '[']);
   const stack: Array<{ char: string; line: number }> = [];

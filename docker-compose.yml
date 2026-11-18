@@ -1,7 +1,10 @@
-version: '3.8'
-
+# FlutterForge web UI + local harness engine bridge (Node, no Python).
+#
+# Security note: the engine API on :8787 is unauthenticated by design (local-first).
+# HOST=0.0.0.0 therefore publishes it on every interface of this machine. Only
+# deploy this way behind a reverse proxy that adds authentication, or on a
+# trusted network. Do not expose 8787 to the public internet directly.
 services:
-  # FlutterForge web UI + local DeepSeek Harness bridge (Node, no Python).
   app:
     build:
       context: .
@@ -12,6 +15,7 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8787
+      - FLUTTERFORGE_ALLOW_REMOTE=1
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - DSH_BIN=${DSH_BIN:-}
@@ -23,6 +27,12 @@ services:
       # - /path/to/deepseek-harness:/opt/dsh:ro
       #   and set DSH_BIN=/opt/dsh/runtime/cli/bin/dsh
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 2.0
 
 volumes:
   flutterforge-data:

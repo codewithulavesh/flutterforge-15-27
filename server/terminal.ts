@@ -298,14 +298,31 @@ async function grepCommand(workspace: string, tokens: string[], commandName: str
   if (!parsed.options) return reject(parsed.error ?? `${commandName}: invalid arguments`);
   const options = parsed.options;
 
+  const pattern = options.pattern;
+  // Catastrophic-backtracking guard: reject nested quantifiers over an inner
+  // quantified group — the classic (a+)+$ bomb. Line-by-line execution applies
+  // the pattern to up to 20k files, so an exponential pattern must never run.
+  const nestedQuantifier = /\((?:[^()]|\\.)*(?:[+*]|\{\d+(,\d*)?\})(?:[^()]|\\.)*\)\s*(?:[+*]|\{\d+(,\d*)?\})/;
+  if (!options.fixed && (pattern.length > 200 || nestedQuantifier.test(pattern))) {
+    return reject(`${commandName}: pattern is too complex (nested quantifiers or length > 200). Use -F for literal search.`);
+  }
+  if (options.fixed && pattern.length > 1000) {
+    return reject(`${commandName}: pattern is too long (max 1000 chars).`);
+  }
+
+  const compiled = options.fixed ? null : new RegExp(pattern, options.ignoreCase ? 'i' : '');
+  const wordBoundary = (options.fixed && options.word)
+    ? new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, options.ignoreCase ? 'i' : '')
+    : null;
+
   const matcher = options.fixed
     ? (line: string) => {
       const haystack = options.ignoreCase ? line.toLowerCase() : line;
-      const needle = options.ignoreCase ? options.pattern.toLowerCase() : options.pattern;
+      const needle = options.ignoreCase ? pattern.toLowerCase() : pattern;
       if (!options.word) return haystack.includes(needle);
-      return new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, options.ignoreCase ? 'i' : '').test(line);
+      return wordBoundary!.test(line);
     }
-    : (line: string) => new RegExp(options.pattern, options.ignoreCase ? 'i' : '').test(line);
+    : (line: string) => compiled!.test(line);
 
   const roots = options.targets.length > 0 ? options.targets : ['.'];
   const files: Array<{ relative: string; absolute: string }> = [];
@@ -549,12 +566,20 @@ async function toolchainCommand(workspace: string, executable: string, args: str
     return ok('Use the Preview tab to run the app. The terminal supports analyze, test, pub get, and build checks.\n');
   }
 
-  const binary = executable === 'flutter'
-    ? await ensureFlutter({ onProgress: (line) => console.log(`[toolchain] ${line}`) })
-    : (await ensureFlutter({ onProgress: (line) => console.log(`[toolchain] ${line}`) }), findDart());
-  const result = await runCommand(binary, args, { cwd: workspace, timeoutMs: TOOL_TIMEOUT_MS });
-  const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
-  return ok(`${output || (result.ok ? '✓ done' : 'Command failed')}\n`, result.code ?? (result.ok ? 0 : 1), Boolean(result.timedOut));
+  let binary: string;
+  try {
+    const ensured = await ensureFlutter({ onProgress: (line) => console.log(`[toolchain] ${line}`) });
+    binary = executable === 'flutter' ? ensured : findDart();
+  } catch (error) {
+    return fail(`Could not prepare the ${executable} toolchain: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    const result = await runCommand(binary, args, { cwd: workspace, timeoutMs: TOOL_TIMEOUT_MS });
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+    return ok(`${output || (result.ok ? '✓ done' : 'Command failed')}\n`, result.code ?? (result.ok ? 0 : 1), Boolean(result.timedOut));
+  } catch (error) {
+    return fail(`${executable} failed to run: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /* ── Git (read-only) ──────────────────────────────────────────────────────── */
@@ -590,12 +615,16 @@ function validateGitArgs(args: string[]): string | null {
 async function gitCommand(workspace: string, args: string[]): Promise<{ statusCode: number; body: TerminalBody }> {
   const validation = validateGitArgs(args);
   if (validation) return reject(validation);
-  const result = await runCommand('git', args, { cwd: workspace, timeoutMs: GIT_TIMEOUT_MS });
-  const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
-  if (/not a git repository/i.test(output)) {
-    return fail('This project workspace is not a git repository.');
+  try {
+    const result = await runCommand('git', args, { cwd: workspace, timeoutMs: GIT_TIMEOUT_MS });
+    const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+    if (/not a git repository/i.test(output)) {
+      return fail('This project workspace is not a git repository.');
+    }
+    return ok(`${output || '(no output)'}\n`, result.code ?? (result.ok ? 0 : 1), Boolean(result.timedOut));
+  } catch (error) {
+    return fail(`git failed to run: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return ok(`${output || '(no output)'}\n`, result.code ?? (result.ok ? 0 : 1), Boolean(result.timedOut));
 }
 
 /* ── Heal + dispatch ──────────────────────────────────────────────────────── */
@@ -679,7 +708,11 @@ export async function runTerminalCommand(projectId: string, command: string): Pr
   await fs.mkdir(workspace, { recursive: true });
 
   if (executable === 'flutter' || executable === 'dart') {
-    await healPubspec(workspace);
+    try {
+      await healPubspec(workspace);
+    } catch (error) {
+      return fail(`Could not prepare the project for the ${executable} toolchain (pubspec): ${error instanceof Error ? error.message : String(error)}`);
+    }
     return toolchainCommand(workspace, executable, tokens.slice(1));
   }
   if (executable === 'git') return gitCommand(workspace, tokens.slice(1));

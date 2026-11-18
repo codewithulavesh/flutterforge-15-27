@@ -22,8 +22,11 @@ as an offline/fallback path.
 ```
 Electron shell (macOS .dmg / Windows .exe)
   ├─ BrowserWindow (React + Vite + Monaco + Zustand)
-  │     └─ POST /api/harness/stream  (SSE)
-  └─ spawns ──► server/index.mjs  (Node, 127.0.0.1:<random port>)
+  │     ├─ POST /api/create-order, /api/payments/fulfill   (Razorpay, server-authoritative)
+  │     ├─ /api/verify/:projectId, /api/analyze/:projectId (real Dart analyzer gates)
+  │     ├─ preview build/serve on an isolated loopback origin
+  │     └─ POST /api/harness/stream  (SSE — engine path, currently unused by the UI)
+  └─ spawns ──► dist-server/index.js  (Node ≥ 24, 127.0.0.1:<random port>)
                     ├─ static dist/ (production)
                     └─ harness bridge
                           ├─ workspace: .flutterforge/workspaces/<project>
@@ -34,13 +37,34 @@ Electron shell (macOS .dmg / Windows .exe)
                                       └─ DeepSeek official route        ← signed-in account
 ```
 
-**Generation fallback chain** (never leaves the user with zero files):
+**Generation fallback chain** (the path the UI actually runs, in order):
 
-1. **DeepSeek Harness engine** — local, streaming, real tool use, persistent sessions.
-2. **Signed-in DeepSeek account** — the harness engine retries with `deepseek-account` when OpenRouter keys are exhausted (independent quota).
-3. **Supabase edge function** `ai-generate` — hosted fallback (optional).
-4. **In-browser TypeScript agent** — `src/agent` (planner, generator, validator, RAG).
-5. **Deterministic template generator** — offline, always available.
+1. **Supabase edge function `ai-generate`** — hosted generation with a model
+   fallback chain. Requires a signed-in user (the function verifies the session
+   JWT); skipped for a 5-minute cooldown after any 404 from the deployment.
+2. **In-browser TypeScript agent** — `src/agent` → `src/orchestrator`: a 12-step
+   pipeline (intake → design system → code generation → QA → bounded repair,
+   max 3 cycles) with critical-step abort semantics.
+3. **Deterministic template generator** — offline, always available; refuses to
+   clobber incremental edits.
+
+**Harness engine** (`POST /api/harness/stream`) — a separate, local, streaming
+generation engine with persistent `dsh` sessions and real tool use. It is fully
+implemented and hardened (per-turn timeouts, workspace isolation, real analyzer
+verification) but is **not yet wired as a client-side generation path**; the UI
+currently uses the edge → in-browser → template chain above. The engine is used
+in production for: `GET /health`, `/api/preview/:projectId/build` (Flutter web
+compile + isolated-origin serve), `/api/verify/:projectId` (real `dart analyze`
+compile gate), `/api/analyze/:projectId`, `/api/terminal/run` (allow-listed,
+no-shell project terminal), `/api/harness/session/:projectId`, and the Razorpay
+endpoints. Wiring the browser-to-engine SSE path is tracked in the roadmap
+(`docs/`); treat README claims about it accordingly.
+
+**Verification is separate from generation.** A file write is never proof of a
+build, and a build is never proof of a working preview. The UI tracks the
+artifact gate (pre-write validation), the compile gate (real `dart analyze`),
+and preview-build status as distinct states; only a zero-error analyzer run and
+a successful preview build count as "verified".
 
 ### Why the engine is a separate process
 
@@ -56,16 +80,18 @@ starts it automatically; browser development runs `npm run server`.
 ```
 flutterforge/
 ├── server/                       # Node harness bridge (no Python)
-│   ├── index.mjs                 # HTTP + SSE + static UI server
+│   ├── index.ts                 # HTTP + SSE + static UI server (tsc → dist-server/)
 │   ├── harness/
-│   │   ├── dsh.mjs               # runtime discovery, profile provisioning, spawn
-│   │   ├── run.mjs               # workspace lifecycle + generation turn
-│   │   ├── events.mjs            # dsh NDJSON → UI SSE projection + validation
-│   │   ├── workspace.mjs         # safe paths, snapshots, diffs, code-block recovery
-│   │   ├── flutter.mjs           # System and managed Flutter SDK discovery
-│   │   ├── managedFlutter.mjs    # Verified first-use Flutter SDK provisioning
-│   │   └── prompt.mjs            # AGENTS.md + generation prompt contract
-│   ├── preview.mjs               # warm `flutter run` preview + build fallback
+│   │   ├── dsh.ts                # runtime discovery, profile provisioning, spawn
+│   │   ├── run.ts                # workspace lifecycle + generation turn
+│   │   ├── events.ts             # dsh NDJSON → UI SSE projection + validation
+│   │   ├── workspace.ts          # safe paths, snapshots, diffs, code-block recovery
+│   │   ├── flutter.ts            # System and managed Flutter SDK discovery
+│   │   ├── managedFlutter.ts     # Verified first-use Flutter SDK provisioning
+│   │   └── prompt.ts             # AGENTS.md + generation prompt contract
+│   ├── preview.ts                # warm `flutter run` preview + isolated-origin web build
+│   ├── paymentLedger.ts          # idempotent Razorpay credit grants (replay-safe)
+│   └── dartSafe.ts               # safe interpolation of Supabase config into Dart
 │   └── test/                     # node:test unit + integration tests (fixture dsh)
 ├── src/
 │   ├── agent/                    # in-browser fallback agent + harnessClient.ts
@@ -88,7 +114,7 @@ flutterforge/
 
 ### Prerequisites
 
-- **Node.js 20+**
+- **Node.js 24+** (the platform control plane uses `node:sqlite`; CI and the Dockerfile pin Node 24)
 - **DeepSeek Harness** installed (or set `DSH_BIN` to its `dsh` CLI)
 - An **OpenRouter key pool** (`sk-or-…`, free models work) **or** a signed-in DeepSeek
   Harness account (the engine falls back automatically)
@@ -247,7 +273,9 @@ flutter build windows --release
 On Windows PowerShell: `.\tool\create_platforms.ps1`.
 
 The **preview canvas** is the real Flutter **web** build served by the embedded
-Node bridge (`server/preview.mjs`). Like FlutterPad, it keeps a warm
+Node bridge (`server/preview.ts`) on a **separate loopback origin** (or a warm
+`flutter run -d web-server` process), never on the app's own origin — the app's
+localStorage secrets are not reachable from previewed code. Like FlutterPad, it keeps a warm
 `flutter run -d web-server` process per project, so edits reload in seconds
 instead of rebuilding a release bundle each time. Set
 `FLUTTERFORGE_PREVIEW_MODE=build` for a one-shot `flutter build web` static host
@@ -374,9 +402,36 @@ curl -s -X POST http://127.0.0.1:8787/api/platform/projects/demo/patch \
 `/api/platform/*` serves its own auth, rate limits and security headers; the legacy
 `/api/*` surface is unchanged.
 
-The integration test drives the real HTTP/SSE surface with `server/test/fixture-dsh.mjs`,
+The integration test drives the real HTTP/SSE surface with `server/test/fixture-dsh.ts`,
 so it verifies workspace isolation, path traversal rejection, event projection,
 session reuse, and reset without spending model tokens.
+
+---
+
+## Security model (read this before deploying)
+
+- **The legacy engine API (`/api/*`, `/preview`, `/publish`) is unauthenticated
+  by design — local-first.** It refuses to bind a non-loopback address unless
+  `FLUTTERFORGE_ALLOW_REMOTE=1` is set. If you opt in, put the engine behind an
+  authenticated reverse proxy; never expose 8787 (or a public tunnel) directly.
+- **The platform API (`/api/platform/*`) enforces RBAC + audit** in `jwt` auth
+  mode. In the default `local` mode it grants owner to the single local user —
+  fine for desktop, not for multi-tenant hosting. Set `FLUTTERFORGE_AUTH_MODE=jwt`
+  with `FLUTTERFORGE_JWT_SECRET` for any shared deployment.
+- **Previews are served on a separate loopback origin** (or a warm web-server on
+  127.0.0.1:\<port\>) so previewed code cannot read the app's localStorage.
+- **Provider keys must never use a `VITE_` prefix** — they would be inlined into
+  the public bundle. `vite.config.ts` warns at build time when it sees one.
+- **Razorpay grants are server-authoritative and idempotent.** Orders are
+  plan-only (no client-set amount); the webhook and the checkout fulfill path
+  both record `razorpay_payment_id` in a durable ledger, so every payment grants
+  credits exactly once.
+- **The terminal is no-shell and allow-listed** (`flutter`, `dart`, `git`
+  (read-only), `ls`, `cat`, `grep`, `find`, `wc`, `mkdir`, `touch`, `rm`), with
+  paths confined to the project workspace and ReDoS-guarded grep patterns.
+- **`/api/supabase/apply-migration` executes arbitrary SQL on your Supabase
+  project with the PAT you provide.** It is a deliberate power tool; the token
+  never leaves your machine (it is forwarded to the engine only).
 
 ---
 

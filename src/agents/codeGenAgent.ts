@@ -262,11 +262,11 @@ class LocalStorageService {
     content: `class Validators {
   static String? email(String? v) {
     if (v == null || v.isEmpty) return 'Email is required';
-    if (!RegExp(r'^[\w\.\+\-]+@[\w\-]+(\.[a-z]{2,})+$').hasMatch(v.trim())) return 'Invalid email';
+    if (!RegExp(r'^[\\w\\.\\+\\-]+@[\\w\\-]+(\\.[a-z]{2,})+$').hasMatch(v.trim())) return 'Invalid email';
     return null;
   }
 
-  static String? required(String? v, [String field = 'This field']) => (v == null || v.trim().isEmpty) ? '\$field is required' : null;
+  static String? required(String? v, [String field = 'This field']) => (v == null || v.trim().isEmpty) ? '$field is required' : null;
 }
 `,
   });

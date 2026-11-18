@@ -305,7 +305,7 @@ export function PreviewPanel() {
             title="Real Flutter Web Preview"
             onLoad={() => setIframeLoaded(true)}
             className="w-full h-full border-0 bg-slate-950"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
           />
           {!iframeLoaded && <PreviewAppSkeleton />}
           {/* Live badge */}

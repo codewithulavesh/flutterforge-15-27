@@ -1,5 +1,6 @@
 import { spawn, ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { getProjectDataRoot } from './paths.js';
 import net from 'node:net';
@@ -9,6 +10,7 @@ import { ensureFlutter } from './harness/managedFlutter.js';
 import { analyzeProject, formatDiagnostic, Diagnostic } from './harness/analyze.js';
 import { sanitizeSdkConstraint, sanitizeFlutterConstraint, fixInvalidPlainScalars, getToolchainVersions } from './harness/pubspecFix.js';
 import { normalizePackageImports } from './harness/normalizeImports.js';
+import { dartSafeUrl, dartSafeToken } from './dartSafe.js';
 
 const MAX_LOG_LINES = 500;
 const BUILD_TIMEOUT_MS = Number(process.env.FLUTTERFORGE_PREVIEW_TIMEOUT_MS || 15 * 60 * 1000);
@@ -194,6 +196,89 @@ function runStreaming(command: string, args: string[], options: RunStreamingOpti
   });
 }
 
+/**
+ * Serve a built Flutter web bundle on its own loopback origin.
+ *
+ * Why: the app itself lives on the user's origin (8787/5173) and holds
+ * localStorage secrets (Supabase PAT, OpenRouter keys). Serving the preview
+ * on the SAME origin and iframing it with allow-same-origin gave arbitrary
+ * generated/prompt-injected JS full read access to those secrets. The preview
+ * is therefore always served as a separate origin, with its own storage and
+ * no path back into the app.
+ */
+const PREVIEW_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.map': 'application/json; charset=utf-8',
+};
+
+function createStaticPreviewServer(rootAbs: string): Promise<{ server: http.Server; port: number; url: string }> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      void (async () => {
+        try {
+          if (req.method !== 'GET' && req.method !== 'HEAD') {
+            res.writeHead(405, { 'Content-Type': 'text/plain' }).end('Method not allowed');
+            return;
+          }
+          const url = new URL(req.url || '/', 'http://127.0.0.1');
+          let pathname: string;
+          try {
+            pathname = decodeURIComponent(url.pathname);
+          } catch {
+            res.writeHead(400).end('Bad request');
+            return;
+          }
+          const absolute = path.resolve(rootAbs, pathname.replace(/^\/+/, ''));
+          if (absolute !== rootAbs && !absolute.startsWith(`${rootAbs}${path.sep}`)) {
+            res.writeHead(403).end('Forbidden');
+            return;
+          }
+          let target = absolute;
+          const stat = await fs.stat(target).catch(() => null);
+          if (stat?.isDirectory()) target = path.join(target, 'index.html');
+          else if (!stat) target = path.join(rootAbs, 'index.html'); // SPA fallback
+          const body = await fs.readFile(target).catch(() => null);
+          if (!body) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+            return;
+          }
+          const extension = path.extname(target).toLowerCase();
+          res.writeHead(200, {
+            'Content-Type': PREVIEW_MIME[extension] || 'application/octet-stream',
+            'Content-Length': body.length,
+            'Cache-Control': extension === '.html' ? 'no-cache' : 'public, max-age=60',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          if (req.method === 'HEAD') res.end();
+          else res.end(body);
+        } catch {
+          res.writeHead(500, { 'Content-Type': 'text/plain' }).end('Preview server error');
+        }
+      })();
+    });
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolve({ server, port, url: `http://127.0.0.1:${port}/` });
+    });
+  });
+}
+
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -266,18 +351,32 @@ export function createPreviewService(options: { rootDir?: string } = {}) {
   const projectToSession = new Map<string, string>();
   const buildingProjects = new Set<string>();
   const runners = new Map<string, { child: ChildProcess; port: number; url: string }>();
+  const staticServers = new Map<string, { server: http.Server; port: number; url: string }>();
+
+  function closeStaticServer(key: string): void {
+    const entry = staticServers.get(key);
+    if (!entry) return;
+    staticServers.delete(key);
+    try {
+      entry.server.close();
+    } catch {
+      // already closed
+    }
+  }
 
   const MAX_RUNNERS = Number(process.env.FLUTTERFORGE_MAX_PREVIEWS || 3);
 
   function killRunner(key: string) {
     const runner = runners.get(key);
-    if (!runner) return;
-    runners.delete(key);
-    try {
-      runner.child.kill('SIGKILL');
-    } catch {
-      // already gone
+    if (runner) {
+      runners.delete(key);
+      try {
+        runner.child.kill('SIGKILL');
+      } catch {
+        // already gone
+      }
     }
+    closeStaticServer(key);
   }
 
   const previewDir = (projectId: string) => path.join(rootDir, projectKey(projectId));
@@ -382,8 +481,10 @@ export function createPreviewService(options: { rootDir?: string } = {}) {
           const constants = path.join(directory, 'lib', 'core', 'constants', 'app_constants.dart');
           try {
             let content = await fs.readFile(constants, 'utf8');
-            if (meta.supabaseUrl) content = content.replace(/supabaseUrl\s*=\s*['"][^'"]*['"]/, `supabaseUrl = '${meta.supabaseUrl}'`);
-            if (meta.supabaseAnonKey) content = content.replace(/supabaseAnonKey\s*=\s*['"][^'"]*['"]/, `supabaseAnonKey = '${meta.supabaseAnonKey}'`);
+            const safeUrl = meta.supabaseUrl ? dartSafeUrl(meta.supabaseUrl) : null;
+            const safeKey = meta.supabaseAnonKey ? dartSafeToken(meta.supabaseAnonKey) : null;
+            if (safeUrl) content = content.replace(/supabaseUrl\s*=\s*['"][^'"]*['"]/, `supabaseUrl = '${safeUrl}'`);
+            if (safeKey) content = content.replace(/supabaseAnonKey\s*=\s*['"][^'"]*['"]/, `supabaseAnonKey = '${safeKey}'`);
             await fs.writeFile(constants, content, 'utf8');
           } catch {
             // No constants
@@ -512,7 +613,7 @@ export function createPreviewService(options: { rootDir?: string } = {}) {
           log('[preview] Building Flutter web (release)…');
           const built = await runStreaming(
             flutterBin,
-            ['build', 'web', '--release', '--base-href', session.url],
+            ['build', 'web', '--release', '--base-href', '/'],
             {
               cwd: directory,
               timeoutMs: BUILD_TIMEOUT_MS,
@@ -525,10 +626,17 @@ export function createPreviewService(options: { rootDir?: string } = {}) {
           session.proc = null;
           if (!built.ok) throw new Error(`flutter build web failed${built.error ? `: ${built.error}` : ''}`);
 
-          await fs.access(path.join(directory, 'build', 'web', 'index.html'));
+          const webRoot = path.join(directory, 'build', 'web');
+          await fs.access(path.join(webRoot, 'index.html'));
+          // Serve the build on its own loopback origin — never same-origin
+          // with the app (the app holds localStorage secrets).
+          closeStaticServer(key);
+          const isolated = await createStaticPreviewServer(webRoot);
+          staticServers.set(key, isolated);
           session.status = 'running';
-          session.url = `/preview/${key}/`;
-          log('[preview] Ready.');
+          session.url = isolated.url;
+          session.port = isolated.port;
+          log(`[preview] Ready at ${isolated.url} (isolated origin).`);
         } else {
           if (runners.size >= MAX_RUNNERS) {
             const oldest = runners.keys().next().value;
@@ -593,7 +701,7 @@ export function createPreviewService(options: { rootDir?: string } = {}) {
       status: session.status,
       url: session.status === 'running' ? session.url : null,
       publicUrl: null,
-      port: null,
+      port: session.port ?? null,
       logs: session.logs.slice(-200),
       diagnostics: session.diagnostics.slice(0, 60),
       createdAt: session.createdAt,
@@ -648,6 +756,12 @@ export function createPreviewService(options: { rootDir?: string } = {}) {
     const runner = runners.get(key);
     if (runner?.url) {
       res.writeHead(302, { Location: runner.url });
+      res.end();
+      return true;
+    }
+    const isolated = staticServers.get(key);
+    if (isolated?.url) {
+      res.writeHead(302, { Location: isolated.url });
       res.end();
       return true;
     }

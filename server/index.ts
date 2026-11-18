@@ -30,6 +30,16 @@ seedCredentialsFromEnv();
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '127.0.0.1';
+// The legacy engine API has no authentication (local-first design). Refuse to
+// bind a non-loopback interface unless the operator explicitly opts in with
+// FLUTTERFORGE_ALLOW_REMOTE=1 — otherwise a stray HOST=0.0.0.0 in an env file
+// would publish /api/terminal/run and /api/credentials to the network.
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '::ffff:127.0.0.1']);
+if (!LOOPBACK_HOSTS.has(HOST) && process.env.FLUTTERFORGE_ALLOW_REMOTE !== '1') {
+  console.error(`Refusing to bind non-loopback HOST="${HOST}" without FLUTTERFORGE_ALLOW_REMOTE=1.`);
+  console.error('The FlutterForge engine API is unauthenticated. Put it behind an authenticated reverse proxy, or keep HOST on 127.0.0.1.');
+  process.exit(1);
+}
 const WEB_DIR = process.env.FLUTTERFORGE_WEB_DIR || path.resolve(HERE, '..', 'dist');
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 const preview = createPreviewService();
@@ -60,6 +70,7 @@ function sendJson(res: ServerResponse, status: number, body: Record<string, any>
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(payload),
     'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
   });
   res.end(payload);
 }
@@ -221,13 +232,25 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+/** decodeURIComponent that fails as a 400, not a 500. */
+function dec(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw Object.assign(new Error('Malformed URL encoding.'), { statusCode: 400 });
+  }
+}
+
 function routeProjectId(pathname: string): string | null {
   const match = pathname.match(/^\/api\/harness\/session\/([^/]+)\/?$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  return match ? dec(match[1]) : null;
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+  // A response whose client vanished (or whose request socket was destroyed
+  // after a 413/timeout) must never crash the process as an unhandled error.
+  res.on('error', () => undefined);
   applyCors(res, origin, req.headers.host || '');
 
   if (origin && !isAllowedLocalOrigin(origin, req.headers.host || '')) {
@@ -445,7 +468,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
     try {
       const result = await verifyProject({
-        projectId: decodeURIComponent(verifyRoute[1]),
+        projectId: dec(verifyRoute[1]),
         files: body.files,
         forcePubGet: body.force_pub_get === true,
         timeoutMs: Number(body.timeout_ms) > 0 ? Number(body.timeout_ms) : undefined,
@@ -467,7 +490,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       return;
     }
     try {
-      const workspace = getProjectWorkspace(decodeURIComponent(analyzeRoute[1]));
+      const workspace = getProjectWorkspace(dec(analyzeRoute[1]));
       if (Array.isArray(body.files) && body.files.length > 0) {
         for (const file of body.files) {
           if (file && typeof file.path === 'string') safeRelativePath(file.path);
@@ -533,17 +556,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   // ── Razorpay webhook: raw body needed for HMAC — must run before JSON parsing ──
   if (pathname === '/api/razorpay/webhook' && req.method === 'POST') {
     let raw = Buffer.alloc(0);
+    let tooLarge = false;
     try {
       await new Promise<void>((resolve, reject) => {
         req.on('data', (chunk: Buffer) => {
+          if (tooLarge) return;
           raw = Buffer.concat([raw, chunk]);
-          if (raw.length > 2 * 1024 * 1024) req.destroy();
+          if (raw.length > 2 * 1024 * 1024) {
+            tooLarge = true;
+            raw = Buffer.alloc(0);
+            reject(Object.assign(new Error('Webhook body exceeds the 2 MiB limit.'), { statusCode: 413 }));
+            req.destroy();
+          }
         });
         req.on('end', () => resolve());
         req.on('error', reject);
       });
     } catch (error) {
-      sendJson(res, 400, { error: 'Could not read webhook body.' });
+      const status = (error as { statusCode?: number }).statusCode === 413 ? 413 : 400;
+      sendJson(res, status, { error: status === 413 ? 'Webhook body is too large.' : 'Could not read webhook body.' });
       return;
     }
     const result = await handleRazorpayWebhook(raw, req.headers['x-razorpay-signature'] as string | undefined);
@@ -636,7 +667,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sendJson(res, error.statusCode || 400, { error: error.message });
       return;
     }
-    const result = await preview.startBuild(decodeURIComponent(previewBuild[1]), body.files, {
+    const result = await preview.startBuild(dec(previewBuild[1]), body.files, {
       supabaseUrl: body.supabaseUrl,
       supabaseAnonKey: body.supabaseAnonKey,
     });
@@ -646,7 +677,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   const previewProjectStatus = pathname.match(/^\/api\/preview\/project\/([^/]+)\/status\/?$/);
   if (previewProjectStatus && req.method === 'GET') {
-    const status = preview.statusForProject(decodeURIComponent(previewProjectStatus[1]));
+    const status = preview.statusForProject(dec(previewProjectStatus[1]));
     if (!status) {
       sendJson(res, 200, { ok: true, status: 'none' });
       return;
@@ -657,7 +688,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   const previewSessionStatus = pathname.match(/^\/api\/preview\/([^/]+)\/status\/?$/);
   if (previewSessionStatus && req.method === 'GET') {
-    const status = preview.sessionStatus(decodeURIComponent(previewSessionStatus[1]));
+    const status = preview.sessionStatus(dec(previewSessionStatus[1]));
     if (!status) {
       sendJson(res, 404, { error: 'Unknown preview session.' });
       return;
@@ -668,14 +699,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   const previewStop = pathname.match(/^\/api\/preview\/([^/]+)\/stop\/?$/);
   if (previewStop && req.method === 'POST') {
-    const stopped = preview.stop(decodeURIComponent(previewStop[1]));
+    const stopped = preview.stop(dec(previewStop[1]));
     sendJson(res, stopped ? 200 : 404, { ok: stopped });
     return;
   }
 
   const previewReload = pathname.match(/^\/api\/preview\/project\/([^/]+)\/reload\/?$/);
   if (previewReload && req.method === 'POST') {
-    const result = preview.reload(decodeURIComponent(previewReload[1]));
+    const result = preview.reload(dec(previewReload[1]));
     sendJson(res, result.statusCode, result.body);
     return;
   }
@@ -693,7 +724,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sendJson(res, error.statusCode || 400, { error: error.message });
       return;
     }
-    const result = await publish.startPublish(decodeURIComponent(publishBuild[1]), body.files, {
+    const result = await publish.startPublish(dec(publishBuild[1]), body.files, {
       target: body.target,
       supabaseUrl: body.supabaseUrl,
       supabaseAnonKey: body.supabaseAnonKey,
@@ -704,7 +735,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   const publishStatus = pathname.match(/^\/api\/publish\/project\/([^/]+)\/status\/?$/);
   if (publishStatus && req.method === 'GET') {
-    const status = publish.statusForProject(decodeURIComponent(publishStatus[1]));
+    const status = publish.statusForProject(dec(publishStatus[1]));
     sendJson(res, 200, status ?? { ok: true, status: 'none' });
     return;
   }
@@ -712,7 +743,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const publishReport = pathname.match(/^\/api\/publish\/project\/([^/]+)\/report\/?$/);
   if (publishReport && req.method === 'GET') {
     try {
-      const report = await fs.readFile(publish.reportForProject(decodeURIComponent(publishReport[1])), 'utf8');
+      const report = await fs.readFile(publish.reportForProject(dec(publishReport[1])), 'utf8');
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(report);
     } catch {
@@ -723,7 +754,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   const publishArtifact = pathname.match(/^\/api\/publish\/project\/([^/]+)\/artifact\/?$/);
   if (publishArtifact && req.method === 'GET') {
-    const file = publish.artifactForProject(decodeURIComponent(publishArtifact[1]));
+    const file = publish.artifactForProject(dec(publishArtifact[1]));
     if (!file) {
       sendJson(res, 404, { error: 'No downloadable artifact for this build.' });
       return;
@@ -735,7 +766,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         'Content-Length': stat.size,
         'Content-Disposition': `attachment; filename="${path.basename(file)}"`,
       });
-      createReadStream(file).pipe(res);
+      const stream = createReadStream(file);
+      stream.on('error', () => {
+        // The file vanished between stat and streaming — never let this crash the process.
+        res.destroy();
+      });
+      stream.pipe(res);
     } catch {
       sendJson(res, 404, { error: 'The built artifact is missing. Publish again.' });
     }
@@ -760,7 +796,14 @@ const server = createServer((req, res) => {
       res.end();
       return;
     }
-    sendJson(res, 500, { error: error instanceof Error ? error.message : 'Internal server error.' });
+    const statusCode = Number((error as { statusCode?: number })?.statusCode);
+    if (Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600) {
+      sendJson(res, statusCode, { error: error instanceof Error ? error.message : 'Request failed.' });
+      return;
+    }
+    // Never leak internal paths/messages to the client.
+    console.error('[flutterforge] unhandled error:', error);
+    sendJson(res, 500, { error: 'Internal server error.' });
   });
 });
 

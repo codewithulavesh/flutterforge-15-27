@@ -25,6 +25,8 @@ import { classifyChatIntent, detectIntentHeuristic, BUILDER_INTENTS } from '@/ag
 import { ChatError, classifyChatError, isAbortError, type ChatErrorDetails } from '@/agent/chatTypes';
 import type { ModelPreference } from '@/agent/modelRouting';
 import { useCredentialsStore } from '@/stores/credentials.store';
+import { useCreditsStore } from '@/stores/credits.store';
+import { isSupabaseConfigured } from '@/services/supabase';
 import { ChatContextHandler } from '@/agent/chatContext';
 import { toast } from '@/components/ui/Toast';
 import { BrandLogo } from '@/components/BrandLogo';
@@ -471,6 +473,15 @@ export function AIBuilderPanel({ variant = 'sidebar' }: { variant?: PanelVariant
   const modelLabel = shortModel(
     (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AGENT_MODEL) || undefined,
   );
+  const wallet = useCreditsStore((state) => state.wallet);
+  const refreshCredits = useCreditsStore((state) => state.refresh);
+
+  // Credits are shown in the header only when the account backend exists —
+  // no fake "unlimited" badge on local/offline builds.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    void refreshCredits();
+  }, [refreshCredits]);
 
   // Unmount: abort the in-flight stream and clear every pending timer, frame
   // and token batch. Without this, a request that outlives the panel keeps
@@ -481,6 +492,15 @@ export function AIBuilderPanel({ variant = 'sidebar' }: { variant?: PanelVariant
       abortRef.current?.abort();
       abortRef.current = null;
       sendingRef.current = false;
+      // Reset the global "busy" signals too — otherwise the composer stays
+      // disabled after navigating away mid-run (the store-level run keeps
+      // writing in the background, but the shell must not claim it's stuck).
+      const terminal = useTerminalStore.getState();
+      terminal.setGenerating(false);
+      terminal.setAnswering(false);
+      terminal.setCurrentPhase(null);
+      useProjectStore.setState({ generatingIn: null });
+      setStreamingReply('');
       if (autoTimer.current !== null) {
         window.clearTimeout(autoTimer.current);
         autoTimer.current = null;
@@ -1098,6 +1118,28 @@ export function AIBuilderPanel({ variant = 'sidebar' }: { variant?: PanelVariant
             {activeSkillCount}
           </span>
         </button>
+        {isSupabaseConfigured && wallet && (
+          <div
+            aria-label={`${wallet.balance} credits remaining this cycle`}
+            className={cn(
+              'hidden h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[10px] tracking-[0.04em] sm:flex',
+              wallet.balance <= 0
+                ? 'border-rose-400/40 bg-rose-400/10 text-rose-300'
+                : wallet.balance <= 25
+                  ? 'border-amber-400/35 bg-amber-400/10 text-amber-300'
+                  : 'border-lime-400/25 bg-lime-400/5 text-lime-300',
+            )}
+            title={
+              wallet.balance <= 0
+                ? 'Out of credits — upgrade to keep generating.'
+                : `${wallet.balance} credits left this cycle (plan: ${wallet.plan})`
+            }
+          >
+            <span aria-hidden="true">⚡</span>
+            {wallet.balance}
+            <span className="text-[8px] opacity-60">cr</span>
+          </div>
+        )}
         <label className="sr-only" htmlFor="ff-model-preference">Generation model</label>
         <select
           aria-label="Generation model"

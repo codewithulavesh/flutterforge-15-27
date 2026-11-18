@@ -22,7 +22,7 @@ import {
 import { prefixedId } from '../kernel/ids.js';
 import { systemClock, type Clock } from '../kernel/clock.js';
 import { createLogger, type Logger } from '../kernel/logger.js';
-import type { Database } from '../storage/database.js';
+import type { Database, TransactionContext } from '../storage/database.js';
 import { IdempotencyStore } from '../storage/idempotency.js';
 import type { AuditLog } from '../audit/auditLog.js';
 
@@ -252,7 +252,7 @@ export class WorkflowEngine {
     const key = options.idempotencyKey ? IdempotencyStore.key(options.idempotencyKey) : undefined;
 
     if (key) {
-      const existing = await this.findByIdempotency(definition.name, key);
+      const existing = await this.findByIdempotency(definition.name, key, options.tenantId);
       if (existing) return { run: existing, created: false };
     }
 
@@ -261,24 +261,25 @@ export class WorkflowEngine {
     const inputJson = JSON.stringify(options.input ?? null);
 
     try {
-      await this.db.run(
-        `INSERT INTO workflow_runs
-           (id, definition, definition_version, status, input_json, tenant_id, project_id, actor,
-            idempotency_key, parent_run_id, created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
-        runId, definition.name, definition.version, inputJson,
-        options.tenantId, options.projectId ?? null, options.actor, key ?? null, options.parentRunId ?? null,
-        now, now,
-      );
+      await this.db.transaction(async (tx) => {
+        await tx.run(
+          `INSERT INTO workflow_runs
+             (id, definition, definition_version, status, input_json, tenant_id, project_id, actor,
+              idempotency_key, parent_run_id, created_at, updated_at)
+           VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          runId, definition.name, definition.version, inputJson,
+          options.tenantId, options.projectId ?? null, options.actor, key ?? null, options.parentRunId ?? null,
+          now, now,
+        );
+        await this.insertSteps(runId, definition, now, tx);
+      });
     } catch (error) {
       if (key && isUniqueViolation(error)) {
-        const existing = await this.findByIdempotency(definition.name, key);
+        const existing = await this.findByIdempotency(definition.name, key, options.tenantId);
         if (existing) return { run: existing, created: false };
       }
       throw error;
     }
-
-    await this.insertSteps(runId, definition, now);
     await this.appendEvent(runId, 'run.created', { definition: definition.name, version: definition.version, actor: options.actor });
     await this.audit?.append({
       tenantId: options.tenantId,
@@ -294,14 +295,15 @@ export class WorkflowEngine {
     return { run, created: true };
   }
 
-  private async findByIdempotency(definitionName: string, key: string): Promise<RunRecord | null> {
-    const row = await this.db.get<any>('SELECT * FROM workflow_runs WHERE definition = ? AND idempotency_key = ? LIMIT 1', definitionName, key);
+  private async findByIdempotency(definitionName: string, key: string, tenantId: string): Promise<RunRecord | null> {
+    const row = await this.db.get<any>('SELECT * FROM workflow_runs WHERE tenant_id = ? AND definition = ? AND idempotency_key = ? LIMIT 1', tenantId, definitionName, key);
     return row ? mapRun(row) : null;
   }
 
-  private async insertSteps(runId: string, definition: WorkflowDefinition, now: number): Promise<void> {
+  private async insertSteps(runId: string, definition: WorkflowDefinition, now: number, tx?: TransactionContext): Promise<void> {
+    const db = tx ?? this.db;
     for (const step of definition.steps) {
-      await this.db.run(
+      await db.run(
         `INSERT INTO workflow_steps (run_id, step_id, status, attempt, updated_at)
          VALUES (?, ?, 'pending', 0, ?)
          ON CONFLICT (run_id, step_id) DO NOTHING`,

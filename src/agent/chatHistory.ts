@@ -135,7 +135,7 @@ export class ConversationContextManager {
     const summary = olderMessages.length > 0 ? summarizeOlderMessages(olderMessages) : undefined;
     const summaryTokens = summary ? estimateTokens(summary) : 0;
 
-    let availableTokens = Math.max(200, maxTokens - summaryTokens);
+    const availableTokens = Math.max(200, maxTokens - summaryTokens);
 
     // Fit recent messages from newest to oldest
     const selected: ValidatedChatMessage[] = [];

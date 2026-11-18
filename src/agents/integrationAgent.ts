@@ -449,6 +449,7 @@ function escapeDartString(value: string): string {
     .replace(/'/g, "\\'")
     .replace(/\r/g, '\\r')
     .replace(/\n/g, '\\n')
+    // eslint-disable-next-line no-control-regex -- intentional: escapes control characters for safe Dart source emission
     .replace(/[\x00-\x1F\x7F]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 }
 

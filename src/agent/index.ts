@@ -130,7 +130,8 @@ export class FlutterSupabaseAgent {
           message,
         });
         options.onProgress?.(message);
-      }
+      },
+      { signal: options.signal },
     );
 
     // Convert Map<string, GeneratedFile> → AgentFileArtifact[]

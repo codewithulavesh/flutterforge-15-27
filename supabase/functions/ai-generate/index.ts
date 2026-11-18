@@ -125,6 +125,29 @@ function clampMaxTokens(model: string, requested: number): number {
   return requested;
 }
 
+// ── Caller authentication ────────────────────────────────────────────────
+// The browser calls this function with the user's Supabase session token
+// (supabase-js attaches `Authorization: Bearer <access_token>`). The anon key
+// alone is public — it is shipped in the client bundle and must never count
+// as authentication. Without this check, anyone on the internet could burn
+// the server-side OPENROUTER_API_KEY (anonymous OpenRouter proxy).
+async function authenticateUser(req: Request): Promise<{ ok: boolean }> {
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  if (!supabaseUrl) return { ok: false };
+  const auth = req.headers.get("authorization") ?? "";
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  if (!token || (anonKey && token === anonKey)) return { ok: false };
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: anonKey },
+    });
+    return { ok: res.ok };
+  } catch {
+    return { ok: false };
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const cors = corsHeaders(req);
 
@@ -133,6 +156,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const auth = await authenticateUser(req);
+    if (!auth.ok) {
+      return new Response(JSON.stringify({ error: "Authentication required. Sign in and retry." }), {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
     const openRouterKey = req.headers.get("X-OpenRouter-Key") || Deno.env.get("OPENROUTER_API_KEY");
     const requestedModel = req.headers.get("X-OpenRouter-Model");
 

@@ -66,6 +66,14 @@ function mapWallet(row: Record<string, unknown> | null | undefined): CreditWalle
   };
 }
 
+/**
+ * Serializes credit deductions. The RPC must not be called concurrently from
+ * parallel agent batches (3–6 simultaneous LLM calls), and silently dropping
+ * a deduction while another was in flight made metering a placebo. Deduction
+ * calls are now executed one at a time, in order.
+ */
+let spendChain: Promise<unknown> = Promise.resolve();
+
 export const useCreditsStore = create<CreditsState>((set, get) => ({
   wallet: null,
   events: [],
@@ -106,16 +114,17 @@ export const useCreditsStore = create<CreditsState>((set, get) => ({
     }
   },
 
-  spend: async (amount, kind, label, model) => {
+  spend: (amount, kind, label, model) => {
     if (!isSupabaseConfigured) {
       // Engine off / no account: don't block local builds, but report it.
       console.warn('[credits] Supabase not configured — spending not recorded');
-      return { ok: true, balance: Number.POSITIVE_INFINITY };
+      return Promise.resolve({ ok: true, balance: Number.POSITIVE_INFINITY });
     }
-    if (get().spending) {
-      console.warn('[credits] spend skipped — another deduction is in flight');
-      return { ok: true, balance: get().wallet?.balance ?? 0 };
-    }
+    const run = spendChain.then(() => spendOnce());
+    spendChain = run.catch(() => undefined);
+    return run;
+
+    async function spendOnce(): Promise<{ ok: true; balance: number } | { ok: false; error: string }> {
     set({ spending: true });
     try {
       const { data, error } = await supabase.rpc('spend_credits', {
@@ -140,6 +149,7 @@ export const useCreditsStore = create<CreditsState>((set, get) => ({
       const message = cause instanceof Error ? cause.message : String(cause);
       set({ spending: false, error: message });
       return { ok: false, error: message };
+    }
     }
   },
 

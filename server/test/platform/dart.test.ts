@@ -81,7 +81,7 @@ test('triple-quoted and raw strings keep braces balanced', () => {
   assert.ok(!codes.includes('LEX_ERROR'), `unexpected lex errors: ${JSON.stringify(result.diagnostics)}`);
 });
 
-test('string interpolation \${map[\'}\']} does not break delimiter balance', () => {
+test('string interpolation ${map[\'}\']} does not break delimiter balance', () => {
   const source = `import 'dart:core';
 
 void main() {
@@ -385,8 +385,8 @@ test('malformed input never throws and always produces a result', () => {
     'class {',
     'class }',
     'var x = "unterminated',
-    'var y = "interp \${',
-    'var z = "interp \${map[}"',
+    'var y = "interp ${',
+    'var z = "interp ${map[}"',
     '/* unterminated comment',
     '/* nested /* deeper } */',
     '}}}}}}',

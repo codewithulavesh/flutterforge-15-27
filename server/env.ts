@@ -9,8 +9,8 @@
  *
  * Precedence (first write wins):
  *   1. variables already present in process.env
- *   2. .env
- *   3. .env.local on top
+ *   2. .env.local (developer overrides — wins over .env)
+ *   3. .env
  *
  * Best-effort: a malformed file never takes the server down. Missing files
  * are fine. Values may be quoted or bare; `# comments` are supported.
@@ -22,7 +22,7 @@ const DEFAULT_ROOT = process.env.FLUTTERFORGE_DATA_ROOT || process.cwd();
 
 export function loadEnvFiles(root?: string): void {
   const base = root || DEFAULT_ROOT;
-  for (const name of ['.env', '.env.local']) {
+  for (const name of ['.env.local', '.env']) {
     const file = path.join(base, name);
     if (!existsSync(file)) continue;
     try {

@@ -3,13 +3,18 @@
  *
  * Security notes:
  * - KEY_ID goes to the browser (it's the public key); KEY_SECRET never does.
- * - The amount is resolved on the SERVER from a plan table — client-supplied
- *   prices are never trusted. A raw `amount` in paise is accepted only with
- *   the same 100-paise floor enforced by the API.
+ * - The amount is always resolved on the SERVER from a plan table. Orders are
+ *   plan-only: there is no raw/client-priced amount path, so a ₹1 checkout
+ *   can never unlock a paid plan.
  * - On signature mismatch the payment is rejected and NOT marked paid.
+ * - Plan grants are idempotent per `razorpay_payment_id` (see
+ *   paymentLedger.ts): the checkout fulfill call and the `payment.captured`
+ *   webhook race each other, and fulfill can be replayed — the ledger
+ *   guarantees exactly one grant per payment.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import Razorpay from 'razorpay';
+import { getPaymentLedger } from './paymentLedger.js';
 
 const KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
@@ -24,12 +29,14 @@ const PLAN_PRICES: Record<string, { monthly: number; yearly: number; label: stri
   team: { monthly: 499900, yearly: 399900, label: 'FlutterForge Team' }, // ₹4,999 /mo · ₹3,999 yrly
 };
 
+const USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export function isKnownPlan(plan: string): plan is 'pro' | 'team' {
+  return plan === 'pro' || plan === 'team';
+}
+
 export interface CreateOrderInput {
   plan?: string;
   period?: string;
-  amount?: number;
-  currency?: string;
-  receipt?: string;
   userId?: string;
 }
 
@@ -47,31 +54,27 @@ export async function createOrder(input: CreateOrderInput): Promise<OrderResult>
   }
 
   // Resolve server-side pricing — never the client's claim about the price.
-  let amount: number | null = null;
-  let currency = 'INR';
+  // Orders are plan-only by design: a client-priced ("custom amount") order
+  // could never unlock a plan, so we don't offer one at all.
   const plan = (input.plan || '').toLowerCase();
   const period = (input.period || 'monthly').toLowerCase() === 'yearly' ? 'yearly' : 'monthly';
 
-  if (plan) {
-    const entry = PLAN_PRICES[plan];
-    if (!entry) {
-      return { statusCode: 400, body: { error: `Unknown plan '${plan}'. Expected 'pro' or 'team'.` } };
-    }
-    amount = entry[period];
-  } else if (typeof input.amount === 'number' && Number.isFinite(input.amount)) {
-    amount = Math.round(input.amount);
-    currency = (input.currency || 'INR').toUpperCase();
+  if (!plan) {
+    return { statusCode: 400, body: { error: "Provide a plan ('pro'|'team' with optional period 'monthly'|'yearly')." } };
+  }
+  const entry = PLAN_PRICES[plan];
+  if (!entry) {
+    return { statusCode: 400, body: { error: `Unknown plan '${plan}'. Expected 'pro' or 'team'.` } };
+  }
+  const amount = entry[period];
+  const currency = 'INR';
+
+  const userId = String(input.userId || '').trim();
+  if (!USER_ID_PATTERN.test(userId)) {
+    return { statusCode: 400, body: { error: 'A valid userId (the signed-in Supabase user id) is required to create a plan order.' } };
   }
 
-  if (amount === null) {
-    return { statusCode: 400, body: { error: "Provide a plan ('pro'|'team' with optional period) or an amount in paise." } };
-  }
-  if (amount < 100) {
-    return { statusCode: 400, body: { error: 'Minimum amount is 100 paise (₹1).' } };
-  }
-
-  const receipt = (input.receipt || `rcpt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`)
-    .slice(0, 40);
+  const receipt = `rcpt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`.slice(0, 40);
 
   try {
     const razorpay = new Razorpay({ key_id: KEY_ID, key_secret: KEY_SECRET });
@@ -81,9 +84,9 @@ export async function createOrder(input: CreateOrderInput): Promise<OrderResult>
       receipt,
       payment_capture: 1,
       notes: {
-        plan: plan || 'custom',
+        plan,
         period,
-        user_id: input.userId?.slice(0, 64) || '',
+        user_id: userId,
       },
     } as never);
 
@@ -93,7 +96,7 @@ export async function createOrder(input: CreateOrderInput): Promise<OrderResult>
         order_id: (order as { id: string }).id,
         amount: (order as { amount: number }).amount,
         currency: (order as { currency: string }).currency,
-        plan: plan || null,
+        plan,
         period,
       },
     };
@@ -238,19 +241,50 @@ export async function fulfillPayment(input: FulfillInput): Promise<OrderResult> 
     return { statusCode: 409, body: { ok: false, error: `Order not paid yet (status: ${remote.order.status})` } };
   }
 
-  const notedPlan = remote.order.notes?.plan?.toLowerCase();
-  const grantPlan = notedPlan === 'pro' || notedPlan === 'team' ? notedPlan : plan;
+  // The grant decision is bound exclusively to what the server recorded on
+  // the order at creation time — never to what the client asks for now.
+  // A plan the server didn't price (missing/unknown notes) grants nothing.
+  const notedPlan = remote.order.notes?.plan?.toLowerCase() ?? '';
+  const notedPeriod = remote.order.notes?.period?.toLowerCase() === 'yearly' ? 'yearly' : 'monthly';
+  if (!isKnownPlan(notedPlan)) {
+    return { statusCode: 400, body: { ok: false, error: 'Order does not carry a server-issued plan; refusing to grant credits.' } };
+  }
+  if (notedPlan !== plan) {
+    return { statusCode: 400, body: { ok: false, error: `Order plan ('${notedPlan}') does not match the requested plan ('${plan}').` } };
+  }
+  // Cross-check the paid amount against the server price table for the noted
+  // plan/period — a tampered or under-paid order grants nothing.
+  const expectedAmount = PLAN_PRICES[notedPlan][notedPeriod];
+  const paidAmount = Number((remote.order as { amount?: number }).amount);
+  if (Number.isFinite(paidAmount) && paidAmount !== expectedAmount) {
+    return { statusCode: 400, body: { ok: false, error: 'Paid amount does not match the plan price table; refusing to grant credits.' } };
+  }
+  const grantPlan = notedPlan;
   const userId = remote.order.notes?.user_id;
-  if (!userId) {
-    return { statusCode: 400, body: { ok: false, error: 'Order carries no user_id — create it via FlutterForge checkout.' } };
+  if (!userId || !USER_ID_PATTERN.test(userId)) {
+    return { statusCode: 400, body: { ok: false, error: 'Order carries no valid user_id — create it via FlutterForge checkout.' } };
   }
 
-  const grant = await grantPlanCredits(userId, grantPlan);
-  if (!grant.ok) {
-    const reason = 'error' in grant ? grant.error : 'Could not grant plan credits';
-    return { statusCode: 502, body: { ok: false, error: reason } };
+  const ledger = getPaymentLedger();
+  let grantedBalance: number | null = null;
+  let grantError: string | null = null;
+  const result = await ledger.grantOnce(input.paymentId, async () => {
+    const grant = await grantPlanCredits(userId, grantPlan);
+    if (!grant.ok) {
+      grantError = 'error' in grant ? grant.error : 'Could not grant plan credits';
+      return null;
+    }
+    grantedBalance = grant.payload.balance ?? null;
+    return { paymentId: input.paymentId!, plan: grantPlan, userId, grantedAt: Date.now() };
+  });
+  if (!result) {
+    return { statusCode: 502, body: { ok: false, error: grantError ?? 'Could not grant plan credits. Try again or contact support.' } };
   }
-  return { statusCode: 200, body: { ok: true, balance: grant.payload.balance ?? null, plan: grantPlan } };
+  if (!result.granted) {
+    // Idempotent replay (double-click, webhook raced us, client retry).
+    return { statusCode: 200, body: { ok: true, balance: null, plan: result.entry.plan, duplicate: true } };
+  }
+  return { statusCode: 200, body: { ok: true, balance: grantedBalance, plan: grantPlan, duplicate: false } };
 }
 
 /* ── Webhook ───────────────────────────────────────────────────────── */
@@ -292,18 +326,43 @@ export async function handleRazorpayWebhook(rawBody: Buffer, signature: string |
   if (!entity) {
     return { statusCode: 200, body: { ok: true, note: 'payment entity missing, nothing granted' } };
   }
+  if (String(entity.status || '').toLowerCase() !== 'captured') {
+    return { statusCode: 200, body: { ok: true, note: `payment status is '${String(entity.status)}', not captured; nothing granted` } };
+  }
 
+  const paymentId = String(entity.id || '').trim();
   const notes = (entity.notes as Record<string, string> | undefined) ?? {};
   const plan = (notes.plan || '').toLowerCase();
+  const period = notes.period?.toLowerCase() === 'yearly' ? 'yearly' : 'monthly';
   const userId = notes.user_id;
-  if (!userId || (plan !== 'pro' && plan !== 'team')) {
-    return { statusCode: 200, body: { ok: true, note: 'webhook payload lacks plan/user_id; nothing granted' } };
+  if (!paymentId) {
+    return { statusCode: 200, body: { ok: true, note: 'webhook payload carries no payment id; nothing granted' } };
+  }
+  if (!userId || !USER_ID_PATTERN.test(userId) || !isKnownPlan(plan)) {
+    return { statusCode: 200, body: { ok: true, note: 'webhook payload lacks a valid plan/user_id; nothing granted' } };
+  }
+  // Cross-check the captured amount against the server price table.
+  const expectedAmount = PLAN_PRICES[plan][period];
+  const capturedAmount = Number(entity.amount);
+  if (Number.isFinite(capturedAmount) && capturedAmount !== expectedAmount) {
+    return { statusCode: 200, body: { ok: true, note: 'captured amount does not match the plan price table; nothing granted' } };
   }
 
-  const grant = await grantPlanCredits(userId, plan);
-  if (!grant.ok) {
-    const reason = 'error' in grant ? grant.error : 'Could not grant plan credits';
-    return { statusCode: 502, body: { ok: false, error: reason } };
+  const ledger = getPaymentLedger();
+  let grantError: string | null = null;
+  const result = await ledger.grantOnce(paymentId, async () => {
+    const grant = await grantPlanCredits(userId, plan);
+    if (grant.ok === false) {
+      grantError = grant.error;
+      return null;
+    }
+    return { paymentId, plan, userId, grantedAt: Date.now() };
+  });
+  if (!result) {
+    return { statusCode: 502, body: { ok: false, error: grantError ?? 'Could not grant plan credits.' } };
   }
-  return { statusCode: 200, body: { ok: true, balance: grant.payload.balance ?? null, plan } };
+  if (!result.granted) {
+    return { statusCode: 200, body: { ok: true, duplicate: true, plan: result.entry.plan, note: 'payment already granted; nothing to do.' } };
+  }
+  return { statusCode: 200, body: { ok: true, plan, duplicate: false, note: 'plan credits granted' } };
 }

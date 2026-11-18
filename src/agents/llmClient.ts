@@ -306,12 +306,21 @@ function resolveTimeoutMs(timeoutMs?: number): number {
   return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.floor(timeoutMs)));
 }
 
-/** Masked, non-reversible attempt identifier — never contains the raw key. */
+/**
+ * Non-reversible attempt identifier — contains ZERO characters of the key.
+ * Errors end up in the UI and in sessionStorage, so no key material may be
+ * embedded. FNV-1a is not cryptographic; that is fine, it only needs to be
+ * stable and distinct per key.
+ */
 function maskKeyHint(key: string | undefined): string {
   if (!key) return 'no-key';
   const trimmed = key.trim();
-  if (trimmed.length <= 8) return `key:**** (${trimmed.length} chars)`;
-  return `key:${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < trimmed.length; index += 1) {
+    hash ^= trimmed.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `key:id-${hash.toString(16).padStart(8, '0')}`;
 }
 
 /** chars / 4 — rough but safe token estimate for the request-size guard. */
@@ -581,6 +590,10 @@ export async function callLLM(
   messages: LLMMessage[],
   options: LLMCallOptions = {}
 ): Promise<LLMResponse> {
+  // Credits pre-flight (before any network work). Fails open on infra errors;
+  // throws CreditsExhaustedError only on a definitive zero/low balance.
+  await assertCreditsFor(options);
+
   const sleep = options.sleepFn ?? defaultSleep;
   const timeoutMs = resolveTimeoutMs(options.timeoutMs);
   const candidateKeys = getCandidateKeys(options.apiKey);
@@ -891,7 +904,7 @@ export async function callLLMText(
  * (Kept for pipeline compatibility: callLLM already rotates keys and fails over
  * across model tiers; this wrapper preserves the historical call-site contract.)
  */
-export async function callLLMWithFallback<T>(
+export async function callLLMWithFallback(
   messages: LLMMessage[],
   parseMode: 'json' | 'text',
   options: LLMCallOptions = {}

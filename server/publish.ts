@@ -7,6 +7,7 @@ import { materializeFiles, safeRelativePath } from './harness/workspace.js';
 import { ensureFlutter } from './harness/managedFlutter.js';
 import { analyzeProject, formatDiagnostic } from './harness/analyze.js';
 import { sanitizeSdkConstraint, sanitizeFlutterConstraint, fixInvalidPlainScalars, getToolchainVersions } from './harness/pubspecFix.js';
+import { dartSafeUrl, dartSafeToken } from './dartSafe.js';
 
 export const PUBLISH_TARGETS = new Set(['web', 'pwa', 'android', 'macos', 'windows']);
 
@@ -213,8 +214,10 @@ export function createPublishService(options: { rootDir?: string } = {}) {
           const constants = path.join(directory, 'lib', 'core', 'constants', 'app_constants.dart');
           try {
             let content = await fs.readFile(constants, 'utf8');
-            if (meta.supabaseUrl) content = content.replace(/supabaseUrl\s*=\s*['"][^'"]*['"]/, `supabaseUrl = '${meta.supabaseUrl}'`);
-            if (meta.supabaseAnonKey) content = content.replace(/supabaseAnonKey\s*=\s*['"][^'"]*['"]/, `supabaseAnonKey = '${meta.supabaseAnonKey}'`);
+            const safeUrl = meta.supabaseUrl ? dartSafeUrl(meta.supabaseUrl) : null;
+            const safeKey = meta.supabaseAnonKey ? dartSafeToken(meta.supabaseAnonKey) : null;
+            if (safeUrl) content = content.replace(/supabaseUrl\s*=\s*['"][^'"]*['"]/, `supabaseUrl = '${safeUrl}'`);
+            if (safeKey) content = content.replace(/supabaseAnonKey\s*=\s*['"][^'"]*['"]/, `supabaseAnonKey = '${safeKey}'`);
             await fs.writeFile(constants, content, 'utf8');
           } catch {
             // No constants

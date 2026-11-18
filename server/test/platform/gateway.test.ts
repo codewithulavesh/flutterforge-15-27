@@ -234,7 +234,8 @@ test('issuer mismatch is BAD_ISSUER; missing iss is MISSING_CLAIM', async () => 
     verifier.verify(hs256Token(validPayload({ iss: 'someone-else' }))),
     'BAD_ISSUER',
   );
-  const { iss: _omit, ...withoutIss } = validPayload();
+  const withoutIss = { ...validPayload() };
+  delete (withoutIss as Record<string, unknown>).iss;
   await assertJwtRejects(verifier.verify(hs256Token(withoutIss)), 'MISSING_CLAIM');
   const ok = await verifier.verify(hs256Token(validPayload()));
   assert.equal(ok.payload.iss, 'flutterforge');
@@ -270,12 +271,14 @@ test('audience array must intersect the accepted audiences', async () => {
     'BAD_AUDIENCE',
   );
 
-  const { aud: _omit, ...withoutAud } = validPayload();
+  const withoutAud = { ...validPayload() };
+  delete (withoutAud as Record<string, unknown>).aud;
   await assertJwtRejects(verifier.verify(hs256Token(withoutAud)), 'MISSING_CLAIM');
 });
 
 test('missing exp is MISSING_CLAIM unless requireExp is false', async () => {
-  const { exp: _omit, ...withoutExp } = validPayload();
+  const withoutExp = { ...validPayload() };
+  delete (withoutExp as Record<string, unknown>).exp;
   const required = createHs256Verifier({ secret: 'unit-test-secret', now: fixedNow });
   await assertJwtRejects(required.verify(hs256Token(withoutExp)), 'MISSING_CLAIM');
 

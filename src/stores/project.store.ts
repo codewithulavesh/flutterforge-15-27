@@ -366,6 +366,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ error: error.message });
       return;
     }
+    // Never clobber the file list the user is looking at with a project they
+    // switched away from mid-run (background generations write to the DB and
+    // call this when they finish).
+    if (get().currentProject?.id !== projectId) {
+      return;
+    }
     set({ files: (data as ProjectFile[]) ?? [] });
   },
 
@@ -1597,8 +1603,13 @@ let activeRepairAbort: AbortController | null = null;
 
 // Session flag: the Supabase `ai-generate` edge function answered 404/absent.
 // Every generation used to retry it (404 + CORS noise) before falling through;
-// after the first miss we skip the tier for the rest of the session.
-let edgeGenerateUnavailable = false;
+// after the first miss we skip the tier for a cooldown window, then give it
+// another chance (an edge deploy/blip must not brick the tier for the whole
+// session).
+let edgeGenerateUnavailableUntil = 0;
+const EDGE_RETRY_COOLDOWN_MS = 5 * 60 * 1000;
+const edgeGenerateUnavailableNow = () => Date.now() < edgeGenerateUnavailableUntil;
+const markEdgeGenerateUnavailable = () => { edgeGenerateUnavailableUntil = Date.now() + EDGE_RETRY_COOLDOWN_MS; };
 
 // Files without which a Flutter project can never build. When the Edge LLM
 // omits any of these, they are backfilled from the deterministic offline
@@ -1818,8 +1829,19 @@ async function repairFailedBuild(
   try {
     const store = useProjectStore.getState();
     if (!store.currentProject || store.currentProject.id !== projectId) {
-      await store.loadProject(projectId);
-    } else if (!store.conversation) {
+      // Never teleport the user to another project because a background build
+      // failed while they're working elsewhere — and never repair against the
+      // wrong project's file list. Queue it; it will run next time the user
+      // opens this project (or clicks "Fix automatically" in the Preview tab).
+      queueRepair(projectId, logs, round, reason);
+      terminal.addLine({
+        type: 'output',
+        content: `[repair] Skipped auto-repair — "${projectId}" is not the project you're viewing. Open it to retry, or use "Fix automatically" in the Preview tab.`,
+      });
+      activity.end('stopped', 'Auto-repair deferred until the project is opened');
+      return;
+    }
+    if (!store.conversation) {
       await store.loadConversation(projectId);
     }
 
@@ -1991,7 +2013,7 @@ async function requestAIGeneration(
   // Repairs and surgical edits are also routed straight to the local edit
   // agent: the Edge function does whole-app regeneration, not targeted fixes.
   const repairCall = isRepair || isEdit;
-  if (edgeGenerateUnavailable || repairCall) {
+  if (edgeGenerateUnavailableNow() || repairCall) {
     if (repairCall) {
       onProgress?.('Repair mode — applying a targeted fix with the local edit agent…');
     } else {
@@ -2022,6 +2044,7 @@ async function requestAIGeneration(
       const { data, error } = await Promise.race([invokePromise, timeoutPromise]) as Awaited<typeof invokePromise>;
 
       if (!error && data) {
+        edgeGenerateUnavailableUntil = 0; // edge recovered — clear any cooldown
         const generatedFiles = (data as { files?: Array<{ path?: unknown; content?: unknown }>; model?: string; complete?: boolean; missing?: string[] } | null)?.files;
         const usedModel = (data as { model?: string })?.model;
         if (Array.isArray(generatedFiles) && generatedFiles.length > 0) {
@@ -2083,14 +2106,14 @@ async function requestAIGeneration(
         // 404 / "function not found" / CORS-blocked fetches mean the function is
         // NOT deployed — remember and skip this tier for the rest of the session.
         if (/404|FunctionsNotFound|not found|Failed to fetch|Failed to send/i.test(errorMessage)) {
-          edgeGenerateUnavailable = true;
+          markEdgeGenerateUnavailable();
         }
         onProgress?.(`Edge failed (${errorMessage.slice(0, 60)}) - trying local AI agent...`);
       }
     } catch (e) {
       const message = (e as Error).message ?? '';
       if (/404|FunctionsNotFound|not found|Failed to fetch|Failed to send/i.test(message)) {
-        edgeGenerateUnavailable = true;
+        markEdgeGenerateUnavailable();
       }
       onProgress?.(`Edge timeout/error (${message.slice(0, 40)}) - using structured fallback...`);
     }
