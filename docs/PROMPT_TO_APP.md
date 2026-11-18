@@ -17,6 +17,10 @@ GET  /api/platform/release/artifacts?projectId=<id>
 
 `prompt.to.app` is a durable DAG registered in the workflow engine, so it survives process restarts, retries bounded steps, and streams every transition on the run event log. The same three gates always apply: auth → RBAC → tenant isolation. After RBAC passes, the **structural gate** (`validateDartFiles`) checks generated source; the **contract verifier** (`verifyProjectContract`) checks project shape (main.dart has `runApp`, pubspec identity, required deps); and the **visual QA gate** (`analyzeVisualQa`) checks theme presence, off-token colors, accessibility affordances and responsive layout primitives.
 
+## Arbitrary prompts — the `app.forge` lane
+
+For free-text prompts that no recipe matches, the platform ships a parallel lane: `POST /api/platform/generation/build` (Forge Studio in the workspace) compiles the prompt to a typed **AppSpec**, emits a zero-dependency Flutter project (models/repositories/controllers/screens), scores it against the top-app rubric (`docs/GENERATION_QUALITY.md`), proves it with the real `flutter analyze`, and seals it transactionally. It returns a run id and streams `app.spec → app.emitted → app.scored → app.verified → app.sealed`; the same gates, but the artifact is a complete, analysable app rather than a scaffold. Both DAGs coexist; Forge Studio is the recommended surface for new apps.
+
 ## Recipe catalog (the deterministic lane)
 
 `server/platform/generation/recipes/` maps a prompt to a complete, hand-written app shell:

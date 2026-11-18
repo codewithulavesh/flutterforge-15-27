@@ -14,6 +14,7 @@ const TerminalPanel = lazy(() => import('@/features/workspace/TerminalPanel').th
 const DependenciesView = lazy(() => import('@/features/workspace/DependenciesView').then((module) => ({ default: module.DependenciesView })));
 const VersionsView = lazy(() => import('@/features/workspace/VersionsView').then((module) => ({ default: module.VersionsView })));
 const RevisionHistory = lazy(() => import('@/features/workspace/RevisionHistory').then((module) => ({ default: module.RevisionHistory })));
+const GenerationStudio = lazy(() => import('@/features/workspace/GenerationStudio').then((module) => ({ default: module.GenerationStudio })));
 const SettingsView = lazy(() => import('@/features/workspace/SettingsView').then((module) => ({ default: module.SettingsView })));
 const ExportView = lazy(() => import('@/features/workspace/ExportView').then((module) => ({ default: module.ExportView })));
 const CommandPalette = lazy(() => import('@/features/workspace/CommandPalette').then((module) => ({ default: module.CommandPalette })));
@@ -174,6 +175,8 @@ function renderMainView(view: string) {
       return <VersionsView />;
     case 'revisions':
       return <RevisionHistory />;
+    case 'generation':
+      return <GenerationStudio />;
     case 'settings':
       return <SettingsView />;
     case 'export':

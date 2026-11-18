@@ -51,6 +51,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   TerminalSquare,
   History,
   GitBranch,
+  Hammer,
   Settings: SettingsIcon,
   Download: DownloadIcon,
 };

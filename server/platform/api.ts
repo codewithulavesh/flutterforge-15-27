@@ -24,6 +24,11 @@ import { createPatchApplyWorkflow } from './workflow/patchWorkflow.js';
 import { createVerifyHealWorkflow, createLiveVerifyHealDeps } from './qa/verifyAndHeal.js';
 import { createReleaseBuildWorkflow } from './release/buildWorkflow.js';
 import { createPromptToAppWorkflow } from './generation/promptToApp.js';
+import { createAppForgeWorkflow, appForgeDefaultDeps } from './generation/forgeWorkflow.js';
+import { compileSpec } from './generation/spec/index.js';
+import { validateSpec } from './generation/emit/shared.js';
+import { BENCHMARKS } from './generation/quality/index.js';
+import { APP_DOMAINS, type AppDomain } from './generation/contracts.js';
 import { MeteringService } from './metering/usage.js';
 import {
   buildReleasePlan,
@@ -81,6 +86,7 @@ export function getPlatform(): Promise<PlatformInstance> {
       platform.engine.register(createVerifyHealWorkflow(createLiveVerifyHealDeps({ audit: platform.audit })));
       platform.engine.register(createReleaseBuildWorkflow({ dataDir: platform.config.dataDir }));
       platform.engine.register(createPromptToAppWorkflow({ dataDir: platform.config.dataDir, transactionRoot: platform.transactionRoot }));
+      platform.engine.register(createAppForgeWorkflow(appForgeDefaultDeps({ dataDir: platform.config.dataDir, transactionRoot: platform.transactionRoot })));
       // Resume any run whose lease expired while the process was down, and
       // execute submissions within one poll interval.
       const timer = setInterval(() => {
@@ -301,6 +307,7 @@ function ensureMetering(platform: PlatformInstance): MeteringService {
 }
 
 const expensiveRouteBucket = new Bucket(10, 10 / 60); // 10 per minute per principal
+const specRouteBucket = new Bucket(30, 30 / 60); // 30 per minute per principal
 
 // ------------------------------------------------------------------
 // Route table
@@ -379,8 +386,8 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
       { pillar: '03', name: 'Intent & Intelligence', status: 'ported', notes: 'Existing intent router remains; platform exposes typed diagnostics for repair turns.' },
       { pillar: '04', name: 'Orchestration Control Plane', status: 'implemented', notes: 'Durable DAG engine with leases, retries, suspension, compensation, idempotency.' },
       { pillar: '05', name: 'Human Governance', status: 'implemented', notes: 'Approval gates, risk levels, pending-approval API, immutable audit trail.' },
-      { pillar: '06', name: 'Discovery & Planning', status: 'implemented', notes: 'Starter project synthesis (POST /platform/projects/:id/starter) — valid pubspec, Material 3 theme, deterministic shell, full gate check before sealing.' },
-      { pillar: '07', name: 'Engineering & Generation', status: 'implemented', notes: 'Deterministic prompt-to-app DAG (prompt.to.app) for known app recipes; DeepSeek Harness free-text wired when available. Starter templates + visual QA gate + self-healing repair replace prompts.' },
+      { pillar: '06', name: 'Discovery & Planning', status: 'implemented', notes: 'Deterministic prompt→AppSpec compiler (domain inference, focus-corrected entities, screens/flows/design/requirements) plus starter synthesis and optional LLM enrichment (server-side, failure-safe).' },
+      { pillar: '07', name: 'Engineering & Generation', status: 'implemented', notes: '`app.forge` durable DAG: spec → zero-dependency Flutter emit (models/repos/controllers/screens) → quality rubric (A ≥ 90) → real `flutter analyze` gate → 2PC seal; byte-deterministic re-emission. Legacy recipe DAG and agent pipeline remain.' },
       { pillar: '08', name: 'Transactional Patch Engine', status: 'implemented', notes: 'Two-phase commit, per-workspace mutex/file lock, crash recovery, content-addressed revisions.' },
       { pillar: '09', name: 'Execution Sandbox', status: 'configurable', notes: `mode=${platform.config.sandbox.mode}; policy allowlist module in flight (server/platform/sandbox).` },
       { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection, visual QA gate (token compliance, accessibility, responsiveness); `verify.heal` workflow runs the closed repair loop.' },
@@ -1020,6 +1027,125 @@ add('POST', '/api/platform/maintenance/prune', async ({ res, body, platform, pri
 // ------------------------------------------------------------------
 // Entry point
 // ------------------------------------------------------------------
+
+// ── Generation Quality Program ─────────────────────────────────────────
+add('POST', '/api/platform/generation/spec', async ({ res, body, principal }) => {
+  if (!specRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'generation_spec' });
+    throw new RateLimitError(60_000, { tier: 'generation_spec' });
+  }
+  requirePermission(principal, 'project:read');
+  const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+  if (!prompt) throw new ValidationError('`prompt` is required.', { field: 'prompt' });
+  if (prompt.length > 4_000) throw new ValidationError('`prompt` must be 4000 characters or fewer.', { field: 'prompt' });
+
+  const domain = typeof body?.domain === 'string' && (APP_DOMAINS as readonly string[]).includes(body.domain)
+    ? (body.domain as AppDomain)
+    : undefined;
+  const seedCount = typeof body?.seedCount === 'number' && Number.isFinite(body.seedCount)
+    ? Math.max(0, Math.min(24, Math.trunc(body.seedCount)))
+    : undefined;
+
+  const spec = compileSpec({
+    prompt,
+    appName: typeof body?.appName === 'string' && body.appName.trim() ? body.appName.trim().slice(0, 80) : undefined,
+    packageName: typeof body?.packageName === 'string' && body.packageName.trim() ? body.packageName.trim().slice(0, 40) : undefined,
+    seedColor: typeof body?.seedColor === 'string' ? body.seedColor : undefined,
+    backend: body?.backend === 'supabase' ? 'supabase' : 'local',
+    domain,
+    seedCount,
+  });
+  const validation = validateSpec(spec);
+  if (!validation.ok) {
+    throw new PlatformError({ code: 'GENERATION_SPEC_INVALID', message: validation.errors.slice(0, 6).join('; '), statusCode: 422, details: { errors: validation.errors } });
+  }
+  sendJson(res, 200, { ok: true, spec, validation });
+});
+
+add('POST', '/api/platform/generation/build', async ({ res, body, platform, principal }) => {
+  if (!expensiveRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'generation_build' });
+    throw new RateLimitError(60_000, { tier: 'generation_build' });
+  }
+  const projectId = typeof body?.projectId === 'string' ? body.projectId.trim() : '';
+  if (!projectId) throw new ValidationError('`projectId` is required.', { field: 'projectId' });
+  const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+  if (!prompt) throw new ValidationError('`prompt` is required.', { field: 'prompt' });
+  if (prompt.length > 4_000) throw new ValidationError('`prompt` must be 4000 characters or fewer.', { field: 'prompt' });
+
+  const domain = typeof body?.domain === 'string' && (APP_DOMAINS as readonly string[]).includes(body.domain)
+    ? (body.domain as AppDomain)
+    : undefined;
+  const minQuality = typeof body?.minQuality === 'number' && Number.isFinite(body.minQuality)
+    ? Math.max(0, Math.min(100, Math.trunc(body.minQuality)))
+    : undefined;
+  const seedCount = typeof body?.seedCount === 'number' && Number.isFinite(body.seedCount)
+    ? Math.max(0, Math.min(24, Math.trunc(body.seedCount)))
+    : undefined;
+
+  requirePermission(principal, 'workflow:start', projectId);
+  const { run } = await platform.engine.start('app.forge', {
+    tenantId: principal.tenantId,
+    projectId,
+    actor: principal.userId,
+    input: {
+      projectId,
+      prompt,
+      appName: typeof body?.appName === 'string' && body.appName.trim() ? body.appName.trim().slice(0, 80) : undefined,
+      packageName: typeof body?.packageName === 'string' && body.packageName.trim() ? body.packageName.trim().slice(0, 40) : undefined,
+      seedColor: typeof body?.seedColor === 'string' ? body.seedColor : undefined,
+      backend: body?.backend === 'supabase' ? 'supabase' : 'local',
+      domain,
+      seedCount,
+      minQuality,
+      force: body?.force === true,
+    },
+    idempotencyKey: typeof body?.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
+  });
+  sendJson(res, 202, { ok: true, run, created: true });
+});
+
+add('GET', '/api/platform/generation/quality', async ({ res, url, platform, principal }) => {
+  const projectId = url.searchParams.get('projectId')?.trim() ?? '';
+  if (!projectId) throw new ValidationError('`projectId` is required.', { field: 'projectId' });
+  requirePermission(principal, 'project:read', projectId);
+  const runs = await platform.engine.listRuns({ tenantId: principal.tenantId, projectId, limit: 25 });
+  const latest = runs.find((run) => run.definition === 'app.forge');
+  if (!latest) {
+    throw new PlatformError({ code: 'GENERATION_REPORT_NOT_FOUND', message: 'No app.forge run found for this project yet.', statusCode: 404 });
+  }
+  const output = (latest.output && typeof latest.output === 'object' ? latest.output : {}) as Record<string, unknown>;
+  const score = output.score as { report?: unknown } | undefined;
+  const verify = output.verify as { gate?: unknown } | undefined;
+  const emit = output.emit as { fileCount?: number; bytes?: number; layers?: Record<string, number> } | undefined;
+  const seal = output.seal as { transactionId?: string; workspace?: string; filesWritten?: number } | undefined;
+  const plan = output.plan as { spec?: { app?: { name?: string; domain?: string; tagline?: string }; entities?: unknown[]; screens?: unknown[]; flows?: unknown[] }; enriched?: boolean } | undefined;
+  sendJson(res, 200, {
+    ok: true,
+    run: { id: latest.id, status: latest.status, finishedAt: latest.finishedAt },
+    quality: score?.report ?? null,
+    gate: verify?.gate ?? null,
+    emitted: emit ?? null,
+    seal: seal ?? null,
+    spec: plan?.spec
+      ? {
+          app: plan.spec.app,
+          entities: Array.isArray(plan.spec.entities) ? plan.spec.entities.length : 0,
+          screens: Array.isArray(plan.spec.screens) ? plan.spec.screens.length : 0,
+          flows: Array.isArray(plan.spec.flows) ? plan.spec.flows.length : 0,
+          enriched: plan.enriched === true,
+        }
+      : null,
+  });
+});
+
+add('GET', '/api/platform/generation/benchmarks', async ({ res, principal }) => {
+  requirePermission(principal, 'project:read');
+  sendJson(res, 200, {
+    ok: true,
+    benchmarks: BENCHMARKS.map(({ id, prompt, expectation, weight }) => ({ id, prompt, expectation, weight: weight ?? 1 })),
+  });
+});
 
 export async function handlePlatformRequest(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   const pathname = url.pathname;

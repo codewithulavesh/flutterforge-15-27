@@ -125,6 +125,7 @@ export const SIDEBAR_SECTIONS = [
     label: 'BUILD',
     items: [
       { id: 'ai-builder', label: 'AI Builder', icon: 'Sparkles' },
+      { id: 'generation', label: 'Forge Studio', icon: 'Hammer' },
       { id: 'preview', label: 'Preview', icon: 'Eye' },
       { id: 'files', label: 'Files', icon: 'FolderTree' },
       { id: 'dependencies', label: 'Dependencies', icon: 'Package' },
