@@ -23,6 +23,7 @@ import { version } from './instance.js';
 import { createPatchApplyWorkflow } from './workflow/patchWorkflow.js';
 import { createVerifyHealWorkflow, createLiveVerifyHealDeps } from './qa/verifyAndHeal.js';
 import { createReleaseBuildWorkflow } from './release/buildWorkflow.js';
+import { createPromptToAppWorkflow } from './generation/promptToApp.js';
 import { MeteringService } from './metering/usage.js';
 import {
   buildReleasePlan,
@@ -79,6 +80,7 @@ export function getPlatform(): Promise<PlatformInstance> {
       platform.engine.register(createPatchApplyWorkflow(platform));
       platform.engine.register(createVerifyHealWorkflow(createLiveVerifyHealDeps({ audit: platform.audit })));
       platform.engine.register(createReleaseBuildWorkflow({ dataDir: platform.config.dataDir }));
+      platform.engine.register(createPromptToAppWorkflow({ dataDir: platform.config.dataDir, transactionRoot: platform.transactionRoot }));
       // Resume any run whose lease expired while the process was down, and
       // execute submissions within one poll interval.
       const timer = setInterval(() => {
@@ -378,7 +380,7 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
       { pillar: '04', name: 'Orchestration Control Plane', status: 'implemented', notes: 'Durable DAG engine with leases, retries, suspension, compensation, idempotency.' },
       { pillar: '05', name: 'Human Governance', status: 'implemented', notes: 'Approval gates, risk levels, pending-approval API, immutable audit trail.' },
       { pillar: '06', name: 'Discovery & Planning', status: 'implemented', notes: 'Starter project synthesis (POST /platform/projects/:id/starter) — valid pubspec, Material 3 theme, deterministic shell, full gate check before sealing.' },
-      { pillar: '07', name: 'Engineering & Generation', status: 'implemented', notes: 'Starter + generation engine (untouched): starter scaffolds any prompt-generated app; visual QA gate screens for off-token colors, missing Semantics, missing responsiveness.' },
+      { pillar: '07', name: 'Engineering & Generation', status: 'implemented', notes: 'Deterministic prompt-to-app DAG (prompt.to.app) for known app recipes; DeepSeek Harness free-text wired when available. Starter templates + visual QA gate + self-healing repair replace prompts.' },
       { pillar: '08', name: 'Transactional Patch Engine', status: 'implemented', notes: 'Two-phase commit, per-workspace mutex/file lock, crash recovery, content-addressed revisions.' },
       { pillar: '09', name: 'Execution Sandbox', status: 'configurable', notes: `mode=${platform.config.sandbox.mode}; policy allowlist module in flight (server/platform/sandbox).` },
       { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection, visual QA gate (token compliance, accessibility, responsiveness); `verify.heal` workflow runs the closed repair loop.' },
@@ -851,6 +853,36 @@ add('POST', '/api/platform/release/build', async ({ res, body, platform, princip
     projectId,
     actor: principal.userId,
     input: { projectId, target, osvPolicy },
+    idempotencyKey: typeof body?.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
+  });
+  sendJson(res, 202, { ok: true, run, created: true });
+});
+
+
+add('POST', '/api/platform/projects/:projectId/generate', async ({ res, params, body, platform, principal }) => {
+  if (!expensiveRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'workflow_start' });
+    throw new RateLimitError(60_000, { tier: 'workflow_start' });
+  }
+  const projectId = params.projectId;
+  const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+  if (!prompt) throw new ValidationError('`prompt` is required.', { field: 'prompt' });
+  requirePermission(principal, 'workflow:start', projectId);
+
+  const { run } = await platform.engine.start('prompt.to.app', {
+    tenantId: principal.tenantId,
+    projectId,
+    actor: principal.userId,
+    input: {
+      projectId,
+      prompt,
+      appName: typeof body?.appName === 'string' ? body.appName : undefined,
+      packageName: typeof body?.packageName === 'string' ? body.packageName : undefined,
+      seedColor: typeof body?.seedColor === 'string' ? body.seedColor : undefined,
+      backend: body?.backend === 'supabase' ? 'supabase' : 'local',
+      target: (typeof body?.target === 'string' ? body.target : 'web') as 'web' | 'zip' | 'android-apk' | 'android-aab' | 'ios-archive',
+      recipeId: typeof body?.recipeId === 'string' ? body.recipeId : undefined,
+    },
     idempotencyKey: typeof body?.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
   });
   sendJson(res, 202, { ok: true, run, created: true });
