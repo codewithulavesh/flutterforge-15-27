@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { getCapabilities, getRuntimeInfo } from './harness/dsh.js';
 import { runGeneration, resetProject, getProjectWorkspace, getProjectSnapshot } from './harness/run.js';
 import { analyzeProject } from './harness/analyze.js';
+import { verifyProject } from './harness/verify.js';
 import { materializeFiles, safeRelativePath } from './harness/workspace.js';
 import { createPreviewService } from './preview.js';
 import { createPublishService } from './publish.js';
@@ -22,6 +23,7 @@ import {
 import { ECONOMY_MODEL, FRONTIER_MODEL, publicRoute, routeGeneration } from './routing.js';
 import { createOrder, verifyPayment, fulfillPayment, handleRazorpayWebhook } from './razorpay.js';
 import { verifySupabaseConnection, applySupabaseMigration } from './supabase-bridge.js';
+import { handlePlatformRequest, isPlatformPath, closePlatform } from './platform/api.js';
 
 seedCredentialsFromEnv();
 
@@ -242,6 +244,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
+  // Platform control plane (durable workflows, transactional patch, audit,
+  // metrics). Mounted before the legacy handlers so it gets its own pipeline
+  // with its own auth, rate limiting and security headers.
+  if (isPlatformPath(pathname)) {
+    await handlePlatformRequest(req, res, url);
+    return;
+  }
+
   if (pathname === '/api/harness/health') {
     sendJson(res, 200, {
       ok: true,
@@ -416,6 +426,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     } finally {
       clearInterval(heartbeat);
       if (!res.writableEnded) res.end();
+    }
+    return;
+  }
+
+  const verifyRoute = pathname.match(/^\/api\/verify\/([^/]+)\/?$/);
+  if (verifyRoute && req.method === 'POST') {
+    let body: any = {};
+    try {
+      body = await readJsonBody(req);
+    } catch (error: any) {
+      sendJson(res, error.statusCode || 400, { error: error.message });
+      return;
+    }
+    if (!Array.isArray(body.files) || body.files.length === 0) {
+      sendJson(res, 400, { error: 'files[] is required to verify a project.' });
+      return;
+    }
+    try {
+      const result = await verifyProject({
+        projectId: decodeURIComponent(verifyRoute[1]),
+        files: body.files,
+        forcePubGet: body.force_pub_get === true,
+        timeoutMs: Number(body.timeout_ms) > 0 ? Number(body.timeout_ms) : undefined,
+      });
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 500, { error: error instanceof Error ? error.message : 'Verification failed.' });
     }
     return;
   }
@@ -741,7 +778,10 @@ server.listen(DEFAULT_PORT, HOST, () => {
 
 function shutdown(signal: string) {
   console.log(`flutterforge server: stopping (${signal})`);
-  server.close(() => process.exit(0));
+  server.close(async () => {
+    await closePlatform().catch(() => undefined);
+    process.exit(0);
+  });
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

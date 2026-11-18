@@ -63,11 +63,11 @@ function SettingSelect({
   const id = useId();
   return (
     <div>
-      <label className="mb-1 block text-[11px] font-medium text-[var(--ff-text-muted)]" htmlFor={id}>        {label}
+      <label className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[#748ea0]" htmlFor={id}>
+        {label}
       </label>
-      {/* 16px on mobile prevents iOS Safari zoom-on-focus */}
       <select
-        className="ff-input w-full px-2.5 py-2 text-base sm:py-1.5 sm:text-xs"
+        className="h-10 w-full rounded-xl border border-[rgba(248,255,248,0.14)] bg-[#00101e] px-3 text-[12.5px] text-[#f8fff8] outline-none transition-all focus:border-[var(--fb-lime)] focus:ring-1 focus:ring-[var(--fb-lime)]"
         id={id}
         onChange={(e) => onChange(e.target.value)}
         value={value}
@@ -217,6 +217,14 @@ export function CreateProjectWizard({
 
       reset();
       onClose();
+      // Persist the first prompt for this project. Route state is consumed and
+      // cleared by the workspace; the storage copy survives StrictMode
+      // double-mounts and a reload between create and first render.
+      try {
+        localStorage.setItem(`ff-handoff:${project.id}`, richPrompt);
+      } catch {
+        // private mode / storage unavailable — route state still works
+      }
       toast('success', `Created ${finalName}! Generating app...`);
       navigate(`/project/${project.id}`, {
         state: {
@@ -255,6 +263,7 @@ export function CreateProjectWizard({
       onClose={handleClose}
       title="Create Flutter App"
       size="md"
+      variant="metallic"
       className="p-4 sm:p-6"
     >
       <div className="ff-fade-in flex flex-col">
@@ -264,17 +273,17 @@ export function CreateProjectWizard({
           <section>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <label
-                className="ff-label text-[10px] font-semibold text-[var(--ff-text-muted)]"
+                className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-[var(--fb-lime)]"
                 htmlFor={promptId}
               >
                 What do you want to build?
               </label>
-              <span className="hidden text-[10px] text-[var(--ff-text-dim)] sm:inline">
+              <span className="hidden font-mono text-[10px] uppercase tracking-wider text-[#748ea0] sm:inline">
                 {isMac ? '⌘' : 'Ctrl'} + Enter to generate
               </span>
             </div>
             <textarea
-              className="ff-input min-h-[110px] w-full resize-none rounded-xl p-3 text-base leading-relaxed placeholder:text-[var(--ff-text-dim)] sm:min-h-[96px] sm:text-sm"
+              className="min-h-[110px] w-full resize-none rounded-2xl border border-[rgba(248,255,248,0.14)] bg-white/5 p-3.5 text-base leading-relaxed text-[#f8fff8] placeholder:text-[rgba(248,255,248,0.35)] outline-none transition-all focus:border-[var(--fb-lime)] focus:ring-2 focus:ring-[var(--fb-lime)]/20 sm:min-h-[100px] sm:text-sm"
               id={promptId}
               maxLength={MAX_PROMPT}
               onChange={(e) => setPrompt(e.target.value)}
@@ -284,9 +293,9 @@ export function CreateProjectWizard({
               rows={4}
               value={prompt}
             />
-            <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--ff-text-dim)]">
+            <div className="mt-1.5 flex items-center justify-between text-[11px] text-[#748ea0]">
               <span>The more specific you are, the better the first build.</span>
-              <span className={cn('font-mono tabular-nums', remaining < 100 && 'font-semibold text-[var(--fb-danger)]')}>
+              <span className={cn('font-mono tabular-nums', remaining < 100 ? 'font-semibold text-rose-400' : 'text-[#748ea0]')}>
                 {prompt.length}/{MAX_PROMPT}
               </span>
             </div>
@@ -295,12 +304,13 @@ export function CreateProjectWizard({
           {/* App name */}
           <section>
             <label
-              className="ff-label mb-1.5 block text-[10px] font-semibold text-[var(--ff-text-muted)]"
+              className="mb-1.5 block font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-[var(--fb-lime)]"
               htmlFor={`${promptId}-name`}
             >
-              App name <span className="font-normal normal-case tracking-normal text-[var(--ff-text-dim)]">(optional)</span>
+              App name <span className="font-normal normal-case tracking-normal text-[#748ea0]">(optional)</span>
             </label>
-            <Input
+            <input
+              className="h-11 w-full rounded-xl border border-[rgba(248,255,248,0.14)] bg-white/5 px-3.5 text-[13.5px] text-[#f8fff8] placeholder:text-[rgba(248,255,248,0.35)] outline-none transition-all focus:border-[var(--fb-lime)] focus:ring-2 focus:ring-[var(--fb-lime)]/20"
               id={`${promptId}-name`}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. ShopFlow, HabitPulse"
@@ -310,12 +320,13 @@ export function CreateProjectWizard({
 
           {/* Archetypes */}
           <section>
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="ff-label text-[10px] font-semibold text-[var(--ff-text-muted)]">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-[var(--fb-lime)]">
                 Start from an archetype
               </span>
               {selectedTemplate.id !== 'blank' && (
-                <span className="truncate pl-2 text-[11px] font-medium text-[var(--fb-ink)]">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--fb-lime)]/30 bg-[var(--fb-lime)]/10 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--fb-lime)]">
+                  <span className="h-1 w-1 rounded-full bg-[var(--fb-lime)]" />
                   {selectedTemplate.name}
                 </span>
               )}
@@ -334,10 +345,10 @@ export function CreateProjectWizard({
                   <button
                     aria-pressed={isSelected}
                     className={cn(
-                      'group flex min-h-[44px] items-center gap-2 rounded-[14px] border px-3 py-2 text-left text-xs font-medium transition-all',
+                      'group flex min-h-[46px] items-center gap-2.5 rounded-[16px] border px-3 py-2 text-left text-xs transition-all',
                       isSelected
-                        ? 'border-[var(--fb-ink)] bg-[var(--fb-lime)] text-black'
-                        : 'border-[var(--fb-line)] bg-[var(--fb-soft)] text-[var(--fb-text-muted)] hover:-translate-y-px hover:border-[var(--fb-ink)]/40 hover:text-[var(--fb-ink)]',
+                        ? 'border-[var(--fb-lime)] bg-[var(--fb-lime)]/15 font-bold text-[#f8fff8] shadow-[0_0_16px_-2px_rgba(197,250,117,0.25)]'
+                        : 'border-[rgba(248,255,248,0.12)] bg-white/5 font-medium text-[rgba(248,255,248,0.85)] hover:-translate-y-px hover:border-[rgba(248,255,248,0.25)] hover:bg-white/10 hover:text-white',
                     )}
                     key={tpl.id}
                     onClick={() => handleSelectTemplate(tpl)}
@@ -347,10 +358,12 @@ export function CreateProjectWizard({
                     <span
                       className={cn(
                         'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
-                        isSelected ? 'bg-black/10' : 'bg-[var(--fb-card)]',
+                        isSelected
+                          ? 'bg-[var(--fb-lime)] text-[#00101e] shadow-sm'
+                          : 'border border-[rgba(248,255,248,0.1)] bg-white/5 text-[#748ea0] group-hover:text-white',
                       )}
                     >
-                      <Icon size={14} style={{ color: isSelected ? '#050505' : tpl.color }} />
+                      <Icon size={14} className={isSelected ? 'text-[#00101e]' : undefined} />
                     </span>
                     <span className="min-w-0 truncate">{tpl.name}</span>
                   </button>
@@ -360,27 +373,27 @@ export function CreateProjectWizard({
           </section>
 
           {/* Settings */}
-          <section className="rounded-[16px] border border-[var(--fb-line)] bg-[var(--fb-soft)]">
+          <section className="rounded-2xl border border-[rgba(248,255,248,0.12)] bg-white/5 overflow-hidden transition-colors">
             <button
               aria-controls={advancedId}
               aria-expanded={showAdvanced}
-              className="flex min-h-[44px] w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-medium text-[var(--ff-text-muted)] transition-colors hover:text-[var(--ff-text)]"
+              className="flex min-h-[46px] w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-xs font-medium text-[rgba(248,255,248,0.85)] transition-colors hover:text-white hover:bg-white/5"
               onClick={() => setShowAdvanced((v) => !v)}
               type="button"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <Layers className="shrink-0" size={14} />
-                <span className="shrink-0">Settings</span>
-                <span className="truncate text-[11px] font-normal text-[var(--ff-text-dim)]">{settingsSummary}</span>
+                <Layers className="shrink-0 text-[var(--fb-lime)]" size={14} />
+                <span className="shrink-0 font-semibold text-white">Settings</span>
+                <span className="truncate font-mono text-[10.5px] text-[#748ea0]">{settingsSummary}</span>
               </span>
               <ChevronDown
-                className={cn('shrink-0 transition-transform duration-200', showAdvanced && 'rotate-180')}
+                className={cn('shrink-0 text-[#748ea0] transition-transform duration-200', showAdvanced && 'rotate-180 text-[var(--fb-lime)]')}
                 size={14}
               />
             </button>
 
             {showAdvanced && (
-              <div className="ff-fade-in space-y-3 border-t border-[var(--fb-line)] p-3" id={advancedId}>
+              <div className="ff-fade-in space-y-3.5 border-t border-[rgba(248,255,248,0.1)] p-3.5" id={advancedId}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <SettingSelect label="State management" onChange={setStateManagement} value={stateManagement}>
                     <option value="provider">Provider</option>
@@ -421,16 +434,16 @@ export function CreateProjectWizard({
                 {/* What the backend decision will be */}
                 <p
                   className={cn(
-                    'flex items-start gap-2 rounded-[12px] px-2.5 py-2 text-[11px] leading-relaxed',
+                    'flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-[11px] leading-relaxed',
                     willUseSupabase
-                      ? 'bg-[var(--fb-lime)] text-black'
-                      : 'bg-[var(--fb-card)] text-[var(--ff-text-muted)]',
+                      ? 'border border-[var(--fb-lime)]/30 bg-[var(--fb-lime)]/10 text-[var(--fb-lime)]'
+                      : 'border border-[rgba(248,255,248,0.12)] bg-white/5 text-[rgba(248,255,248,0.7)]',
                   )}
                 >
                   {willUseSupabase ? (
-                    <Database className="mt-0.5 shrink-0" size={13} />
+                    <Database className="mt-0.5 shrink-0 text-[var(--fb-lime)]" size={14} />
                   ) : (
-                    <HardDrive className="mt-0.5 shrink-0" size={13} />
+                    <HardDrive className="mt-0.5 shrink-0 text-[#748ea0]" size={14} />
                   )}
                   <span>
                     {willUseSupabase
@@ -445,20 +458,27 @@ export function CreateProjectWizard({
         </div>
 
         {/* Footer */}
-        <div className="mt-4 flex flex-col-reverse gap-2 border-t border-[var(--fb-line)] pt-4 sm:flex-row sm:items-center sm:justify-end">
-          <Button className="w-full sm:w-auto" onClick={handleClose} size="sm" variant="ghost">
-            Cancel
-          </Button>
-          <Button
-            className="w-full px-5 sm:w-auto"
-            disabled={!prompt.trim()}
-            icon={<Sparkles size={14} />}
-            loading={loading}
-            onClick={handleCreate}
-            size="sm"
+        <div className="mt-5 flex flex-col-reverse gap-2.5 border-t border-[rgba(248,255,248,0.12)] pt-4 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            className="inline-flex h-10 w-full items-center justify-center rounded-full border border-[rgba(248,255,248,0.25)] bg-transparent px-5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:bg-white/10 sm:w-auto"
+            onClick={handleClose}
+            type="button"
           >
-            Generate App
-          </Button>
+            Cancel
+          </button>
+          <button
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[var(--fb-lime)] px-6 text-xs font-bold uppercase tracking-wider text-[#00101e] transition-all hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(197,250,117,0.35)] disabled:opacity-40 disabled:pointer-events-none sm:w-auto"
+            disabled={!prompt.trim() || loading}
+            onClick={handleCreate}
+            type="button"
+          >
+            {loading ? (
+              <span className="size-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            ) : (
+              <Sparkles className="text-[#00101e]" size={14} />
+            )}
+            <span>Generate App</span>
+          </button>
         </div>
       </div>
     </Modal>

@@ -1,4 +1,4 @@
-import type { ProjectState, ProductBrief } from '../orchestrator/state';
+import type { ProjectState, ProductBrief, GateDiagnostic } from '../orchestrator/state';
 import { callLLMJsonStrict, agentModelFor } from './llmClient';
 import { validate } from './schema';
 import { IntakeLLMOutput as IntakeSchema } from './schemas';
@@ -18,8 +18,43 @@ interface IntakeLLMOutput {
   colorPalette: string;
 }
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const VALID_PLATFORMS = new Set(['web', 'macos', 'windows', 'android', 'ios']);
+const M3_NEUTRAL_PRIMARY = '#6750A4';
+const SUPABASE_CONSTRAINT = 'Supabase backend requested (auth/database/realtime)';
+const STATE_MANAGEMENT = new Set(['provider', 'riverpod', 'bloc']);
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (v === null || v === undefined ? '' : String(v).trim()))
+    .filter((v) => v.length > 0);
+}
+
+function str(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function asBool(value: unknown): boolean {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function sanitizeHexColor(value: unknown, fallback: string): string {
+  if (typeof value === 'string') {
+    const v = value.trim();
+    if (HEX_COLOR_RE.test(v)) return v;
+  }
+  return fallback;
+}
+
+function clampEnum(value: unknown, allowed: Set<string>, fallback: string): string {
+  const s = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return allowed.has(s) ? s : fallback;
+}
+
 export async function runIntakeAgent(state: ProjectState): Promise<Partial<ProjectState>> {
   const prompt = state.userPrompt.trim();
+  const diagnostics: GateDiagnostic[] = [];
 
   let output: IntakeLLMOutput;
   try {
@@ -96,19 +131,75 @@ Be specific, accurate, and production-minded. Infer all missing details from the
       keyFeatures: ['Dashboard', 'Data management', 'User profile', 'Settings', 'Notifications'],
       screens: ['SplashScreen', 'HomeScreen', 'DetailScreen', 'ProfileScreen', 'SettingsScreen'],
       stateManagement: 'provider',
-      needsSupabase: p.includes('auth') || p.includes('login') || p.includes('account') || p.includes('database') || p.includes('realtime'),
+      needsSupabase: p.includes('auth') || p.includes('login') || p.includes('account') || p.includes('database') || p.includes('realtime') || p.includes('supabase'),
       colorPalette: colorMap[domain] || '#2563EB',
     };
     console.warn('[IntakeAgent] LLM failed, using keyword fallback:', err);
   }
 
+  // --- Sanitize model output before it reaches shared state ---
+  const rawPlatforms = asStringArray(output.platforms).map((p) => p.toLowerCase());
+  const platformSet = new Set<ProductBrief['platforms'][number]>();
+  for (const p of rawPlatforms) {
+    if (VALID_PLATFORMS.has(p)) platformSet.add(p as ProductBrief['platforms'][number]);
+  }
+  let platforms = [...platformSet];
+  if (platforms.length === 0) {
+    if (rawPlatforms.length > 0) {
+      diagnostics.push({
+        gate: 'intake',
+        level: 'warning',
+        message: `Model emitted unknown platforms [${rawPlatforms.join(', ')}] — defaulting to ['android']`,
+      });
+    }
+    platforms = ['android'];
+  } else if (platforms.length !== rawPlatforms.length) {
+    const dropped = rawPlatforms.filter((p) => !VALID_PLATFORMS.has(p));
+    diagnostics.push({
+      gate: 'intake',
+      level: 'info',
+      message: `Discarded invalid platform(s): ${dropped.join(', ')}`,
+    });
+  }
+
+  // Constraints always exist (never undefined/null downstream).
+  const constraints = asStringArray(output.constraints);
+  // Coordinate Supabase with the architecture agent via ProductBrief.constraints only:
+  // if the raw user prompt asks for Supabase, record it as a constraint so the
+  // architecture agent can see it in its own input — never guess there.
+  if (/supabase/i.test(prompt) && !constraints.some((c) => /supabase/i.test(c))) {
+    constraints.push(SUPABASE_CONSTRAINT);
+  }
+
+  const paletteRaw = typeof output.colorPalette === 'string' ? output.colorPalette.trim() : '';
+  const seedColor = sanitizeHexColor(paletteRaw, M3_NEUTRAL_PRIMARY);
+  if (seedColor !== paletteRaw) {
+    diagnostics.push({
+      gate: 'intake',
+      level: 'warning',
+      message: `Invalid color palette "${paletteRaw || '(empty)'}" — falling back to Material 3 neutral ${M3_NEUTRAL_PRIMARY}`,
+    });
+  }
+
+  // Sanitize the side-channel intake data consumed by downstream agents.
+  const intakeData = {
+    ...output,
+    platforms,
+    constraints,
+    screens: asStringArray(output.screens),
+    keyFeatures: asStringArray(output.keyFeatures),
+    stateManagement: clampEnum(output.stateManagement, STATE_MANAGEMENT, 'provider'),
+    needsSupabase: asBool(output.needsSupabase),
+    colorPalette: seedColor,
+  };
+
   const brief: ProductBrief = {
-    appName: output.appName,
-    oneLiner: output.oneLiner,
-    targetAudience: output.targetAudience,
-    primaryProblem: output.primaryProblem,
-    platforms: (output.platforms as ProductBrief['platforms']) ?? ['web', 'android', 'ios'],
-    constraints: output.constraints,
+    appName: str(output.appName, 'ForgeApp'),
+    oneLiner: str(output.oneLiner, prompt.slice(0, 120)),
+    targetAudience: str(output.targetAudience),
+    primaryProblem: str(output.primaryProblem, prompt),
+    platforms,
+    constraints,
   };
 
   return {
@@ -116,17 +207,18 @@ Be specific, accurate, and production-minded. Infer all missing details from the
     // Store extra intake data in designTokens seed for downstream agents
     designTokens: {
       ...(state.designTokens ?? {
-        primaryColor: '#2563EB', secondaryColor: '#3B82F6', accentColor: '#F59E0B',
-        backgroundColor: '#FAFAFA', surfaceColor: '#FFFFFF', fontFamily: 'Inter',
+        primaryColor: seedColor, secondaryColor: '#3B82F6', accentColor: '#F59E0B',
+        backgroundColor: '#FFFBFE', surfaceColor: '#F3EDF7', fontFamily: 'Inter',
         useMaterial3: true, isDarkPreferred: false, borderRadius: 12,
       }),
-      primaryColor: output.colorPalette,
+      primaryColor: seedColor,
     },
+    diagnostics: [...state.diagnostics, ...diagnostics],
     logs: [
       ...state.logs,
-      `[Intake Agent] Domain: "${output.domain}" | App: "${output.appName}" | Screens: ${output.screens?.join(', ')} | Supabase: ${output.needsSupabase}`,
+      `[Intake Agent] Domain: "${str(output.domain, 'general')}" | App: "${brief.appName}" | Screens: ${intakeData.screens.join(', ')} | Supabase: ${intakeData.needsSupabase}`,
     ],
     // Pass intake analysis downstream via a custom field
-    _intakeData: output,
-  } as Partial<ProjectState> & { _intakeData: IntakeLLMOutput };
+    _intakeData: intakeData,
+  } as Partial<ProjectState> & { _intakeData: typeof intakeData };
 }

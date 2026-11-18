@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { isSupabaseConfigured, supabase } from '@/services/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import { useThemeStore } from '@/stores/theme.store';
 import { ProtectedRoute } from '@/app/ProtectedRoute';
 import { PublicOnlyRoute } from '@/app/PublicOnlyRoute';
 const LandingPage = lazy(() =>
-  import('@/pages/BoldLandingPage').then((module) => ({ default: module.BoldLandingPage })),
+  import('@/pages/LimeLandingPage').then((module) => ({ default: module.LimeLandingPage })),
 );
 const AgentsLandingPage = lazy(() =>
   import('@/pages/AgentsLandingPage').then((module) => ({ default: module.AgentsLandingPage })),
@@ -111,6 +111,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/agents" element={<AgentsLandingPage />} />
+            <Route path="/landing-v2" element={<Navigate to="/" replace />} />
             <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
             <Route path="/signup" element={<PublicOnlyRoute><SignupPage /></PublicOnlyRoute>} />
             <Route path="/forgot-password" element={<PublicOnlyRoute><ForgotPasswordPage /></PublicOnlyRoute>} />

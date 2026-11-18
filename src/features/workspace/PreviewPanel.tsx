@@ -371,15 +371,15 @@ export function PreviewPanel() {
     // 7. Web mode with no build yet — trigger one automatically if files exist
     if (previewMode === 'web' && hasProject && !isBuilding) {
       return (
-        <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-[var(--fb-bg)] text-center select-none">
-          <div className="w-14 h-14 rounded-[18px] border-[6px] border-[#0a0a0a] bg-[var(--fb-card)] flex items-center justify-center mb-4 shadow-[0_18px_36px_-28px_rgba(0,0,0,0.6)]">
-            <Globe size={22} className="text-[var(--fb-ink)]" />
+        <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-[#040a12] text-center select-none">
+          <div className="w-14 h-14 rounded-2xl border border-[rgba(197,250,117,0.30)] bg-[rgba(197,250,117,0.10)] flex items-center justify-center mb-3 shadow-[0_0_24px_rgba(197,250,117,0.15)]">
+            <Globe size={22} className="text-[#c5fa75]" />
           </div>
-          <p className="font-mono text-[8.5px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
+          <p className="font-mono text-[8.5px] font-bold uppercase tracking-[0.16em] text-[#c5fa75]">
             Flutter web engine
           </p>
-          <h3 className="mt-2 text-[18px] font-medium tracking-[-0.03em] leading-[1.1] text-[var(--fb-ink)]">Compile the preview</h3>
-          <p className="mt-2 max-w-[250px] text-[10.5px] leading-relaxed text-[var(--fb-muted)]">
+          <h3 className="mt-2 text-[18px] font-semibold tracking-[-0.02em] text-[#f8fff8]">Compile the preview</h3>
+          <p className="mt-2 max-w-[250px] text-[11px] leading-relaxed text-[#748ea0]">
             {hasProject
               ? 'Compile your generated Flutter app with the real Web engine for a pixel-perfect preview.'
               : 'Generate a Flutter app first, then compile it with the Web engine.'}
@@ -401,7 +401,7 @@ export function PreviewPanel() {
             {hasProject && serverOnline !== false && (
               <button
                 onClick={handleCompileWeb}
-                className="px-4 py-2 rounded-full bg-[var(--fb-ink)] text-[var(--fb-bg)] font-semibold text-[11px] transition-transform hover:-translate-y-px active:scale-95 flex items-center gap-2"
+                className="px-5 py-2.5 rounded-full bg-[#c5fa75] text-[#00101e] font-bold text-[11px] transition-all hover:brightness-105 active:scale-95 flex items-center gap-2 shadow-[0_4px_16px_rgba(197,250,117,0.25)]"
               >
                 <Hammer size={12} />
                 <span>Compile Web</span>
@@ -414,12 +414,12 @@ export function PreviewPanel() {
 
     // 7. Standby state (no files generated yet)
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-[var(--fb-bg)] text-center select-none">
-        <div className="w-12 h-12 rounded-[16px] border-[6px] border-[#0a0a0a] bg-[var(--fb-card)] flex items-center justify-center mb-3">
-          <Sparkles size={20} className="text-[var(--fb-ink)]" />
+      <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-[#040a12] text-center select-none">
+        <div className="w-14 h-14 rounded-2xl border border-[rgba(197,250,117,0.30)] bg-[rgba(197,250,117,0.10)] flex items-center justify-center mb-3 shadow-[0_0_24px_rgba(197,250,117,0.15)]">
+          <Sparkles size={22} className="text-[#c5fa75]" />
         </div>
-        <h3 className="text-[16px] font-medium tracking-[-0.03em] leading-[1.1] text-[var(--fb-ink)]">Instant preview</h3>
-        <p className="mt-2 text-[10.5px] text-[var(--fb-muted)] max-w-[250px] leading-relaxed">
+        <h3 className="text-[16px] font-semibold tracking-[-0.02em] text-[#f8fff8]">Instant preview</h3>
+        <p className="mt-2 text-[11px] text-[#748ea0] max-w-[250px] leading-relaxed">
           Describe your application in the AI Builder to synthesize full production Flutter code with real-time interactive preview.
         </p>
       </div>
@@ -431,10 +431,10 @@ export function PreviewPanel() {
   // multi-stage progress dashboard. The chat panel owns the live activity.
   if (isGenerating) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-[var(--ff-bg)] text-center px-6">
-        <Loader2 size={22} className="text-[var(--ff-primary)] animate-spin mb-3" />
-        <p className="text-[12px] font-semibold text-[var(--ff-text)]">Building your app…</p>
-        <p className="text-[10px] text-[var(--ff-text-dim)] mt-1 max-w-[240px] truncate">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-[#040a12] text-center px-6">
+        <Loader2 size={22} className="text-[#c5fa75] animate-spin mb-3" />
+        <p className="text-[12px] font-semibold text-[#f8fff8]">Building your app…</p>
+        <p className="text-[10px] text-[#748ea0] mt-1 max-w-[240px] truncate">
           {currentPhase || 'Writing Flutter files'}
         </p>
       </div>
@@ -444,21 +444,21 @@ export function PreviewPanel() {
   // If fresh project has not yet completed initial generation, keep preview locked
   if (!hasGeneratedApp && files.length <= 6) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-[var(--fb-bg)] text-center select-none">
-        <div className="w-14 h-14 rounded-[18px] border-[6px] border-[#0a0a0a] bg-[var(--fb-card)] flex items-center justify-center mb-4 shadow-[0_18px_36px_-28px_rgba(0,0,0,0.6)]">
-          <Sparkles size={22} className="text-[var(--fb-ink)]" />
+      <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-[#040a12] text-center select-none">
+        <div className="w-14 h-14 rounded-2xl border border-[rgba(197,250,117,0.30)] bg-[rgba(197,250,117,0.10)] flex items-center justify-center mb-4 shadow-[0_0_24px_rgba(197,250,117,0.15)]">
+          <Sparkles size={22} className="text-[#c5fa75]" />
         </div>
-        <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
+        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-[#c5fa75]">
           Awaiting the first build
         </p>
-        <h3 className="mt-2 text-[clamp(22px,3vw,30px)] font-medium tracking-[-0.04em] leading-[1.05] text-[var(--fb-ink)]">
+        <h3 className="mt-2 text-[clamp(20px,2.5vw,26px)] font-semibold tracking-[-0.03em] leading-[1.1] text-[#f8fff8]">
           Preview ready when you are
         </h3>
-        <p className="mt-3 max-w-sm text-[12.5px] leading-relaxed text-[var(--fb-muted)]">
+        <p className="mt-3 max-w-sm text-[12px] leading-relaxed text-[#748ea0]">
           Describe the app in the AI Builder. The real Flutter web preview appears here as soon as the first build is ready.
         </p>
-        <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-[var(--fb-lime)] px-3 py-1.5 text-[10px] font-bold text-black">
-          <span className="h-1.5 w-1.5 rounded-full bg-black animate-pulse" />
+        <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-[rgba(197,250,117,0.30)] bg-[rgba(197,250,117,0.12)] px-3.5 py-1.5 text-[10px] font-bold text-[#c5fa75]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#c5fa75] animate-pulse" />
           <span>Awaiting generation</span>
         </div>
       </div>
@@ -466,24 +466,27 @@ export function PreviewPanel() {
   }
 
   return (
-    <div className={cn('flex flex-col bg-[var(--ff-bg)]', fullscreen ? 'fixed inset-0 z-50' : 'h-full')}>
+    <div className={cn('flex flex-col bg-[#00101e]', fullscreen ? 'fixed inset-0 z-50' : 'h-full')}>
       {/* ── Unified toolbar: status, devices, tools and compile ─── */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--fb-line)] bg-[var(--fb-card)] px-2 py-1.5 shrink-0 sm:gap-2">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-[rgba(248,255,248,0.10)] bg-[rgba(248,255,248,0.03)] px-3 py-2 shrink-0 sm:gap-2">
         <div className="flex shrink-0 items-center gap-1.5">
-          <div className="rounded-full border border-[var(--fb-line)] bg-[var(--fb-soft)] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-muted)]">
+          <div className="rounded-full border border-[rgba(248,255,248,0.14)] bg-[rgba(248,255,248,0.05)] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#748ea0]">
             Preview
           </div>
           <span className={cn(
-            'inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em]',
+            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em]',
             isRunning
-              ? 'bg-[var(--fb-lime)] text-black'
+              ? 'bg-[rgba(197,250,117,0.15)] border border-[rgba(197,250,117,0.30)] text-[#c5fa75]'
               : isBuilding
-                ? 'bg-[var(--fb-cyan)] text-black'
+                ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-300'
                 : status === 'failed'
-                  ? 'border border-[var(--fb-danger)] text-[var(--fb-danger)]'
-                  : 'bg-[var(--fb-soft)] text-[var(--fb-muted)]'
+                  ? 'border border-red-500/30 bg-red-500/10 text-red-400'
+                  : 'border border-[rgba(248,255,248,0.10)] bg-[rgba(248,255,248,0.05)] text-[#748ea0]'
           )}>
-            <span className={cn('h-1.5 w-1.5 rounded-full', isRunning ? 'bg-black animate-pulse' : isBuilding ? 'bg-black animate-pulse' : status === 'failed' ? 'bg-[var(--fb-danger)]' : 'bg-[var(--fb-dim)]')} />
+            <span className={cn(
+              'h-1.5 w-1.5 rounded-full',
+              isRunning ? 'bg-[#c5fa75] animate-pulse' : isBuilding ? 'bg-cyan-400 animate-pulse' : status === 'failed' ? 'bg-red-400' : 'bg-[#748ea0]'
+            )} />
             {isRunning ? 'Live' : isBuilding ? 'Building' : status === 'failed' ? 'Failed' : 'Ready'}
           </span>
           {/* Server health indicator */}
@@ -503,10 +506,10 @@ export function PreviewPanel() {
           )}
         </div>
 
-        <div className="h-4 w-px shrink-0 bg-[var(--fb-line)]" />
+        <div className="h-4 w-px shrink-0 bg-[rgba(248,255,248,0.10)]" />
 
         {/* Device tabs */}
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto ff-scrollbar sm:flex-none">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto ff-scrollbar sm:flex-none">
           {DEVICE_TABS.map(({ label, device: d, icon: Icon }) => {
             const active = previewDevice === d;
             return (
@@ -516,13 +519,13 @@ export function PreviewPanel() {
                 title={label}
                 aria-label={`${label} preview`}
                 className={cn(
-                  'flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-medium transition-colors',
+                  'flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all',
                   active
-                    ? 'bg-[var(--fb-ink)] text-[var(--fb-bg)]'
-                    : 'text-[var(--fb-muted)] hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]'
+                    ? 'bg-[rgba(197,250,117,0.12)] border border-[rgba(197,250,117,0.35)] text-[#f8fff8] shadow-[0_0_12px_rgba(197,250,117,0.12)]'
+                    : 'border border-transparent text-[#748ea0] hover:bg-[rgba(248,255,248,0.07)] hover:text-[#f8fff8]'
                 )}
               >
-                <Icon size={13} />
+                <Icon size={13} className={cn(active && 'text-[#c5fa75]')} />
                 <span className="hidden sm:inline">{label}</span>
               </button>
             );
@@ -536,19 +539,19 @@ export function PreviewPanel() {
               {dartFiles.length} Dart files
             </span>
           )}
-          <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-full bg-[var(--fb-card)] border border-[var(--fb-line)]">
+          <div className="hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full bg-[rgba(248,255,248,0.05)] border border-[rgba(248,255,248,0.12)]">
             <button
               onClick={() => setZoom((z) => Math.max(25, z - 25))}
-              className="text-[var(--fb-dim)] hover:text-[var(--fb-ink)] transition-colors p-0.5"
+              className="text-[#748ea0] hover:text-[#f8fff8] transition-colors p-0.5"
               title="Zoom Out"
               aria-label="Zoom out"
             >
               <ZoomOut size={12} />
             </button>
-            <span className="font-mono text-[10px] text-[var(--fb-muted)] w-8 text-center select-none">{zoom}%</span>
+            <span className="font-mono text-[10px] text-[#748ea0] w-8 text-center select-none">{zoom}%</span>
             <button
               onClick={() => setZoom((z) => Math.min(200, z + 25))}
-              className="text-[var(--fb-dim)] hover:text-[var(--fb-ink)] transition-colors p-0.5"
+              className="text-[#748ea0] hover:text-[#f8fff8] transition-colors p-0.5"
               title="Zoom In"
               aria-label="Zoom in"
             >
@@ -557,7 +560,7 @@ export function PreviewPanel() {
           </div>
           <button
             onClick={() => setPreviewOrientation(isPortrait ? 'landscape' : 'portrait')}
-            className="p-1.5 rounded-full text-[var(--fb-muted)] hover:text-[var(--fb-ink)] hover:bg-[var(--fb-soft)] transition-colors"
+            className="p-1.5 rounded-full text-[#748ea0] hover:text-[#f8fff8] hover:bg-[rgba(248,255,248,0.07)] transition-colors"
             title="Rotate Orientation"
             aria-label="Rotate orientation"
           >
@@ -567,7 +570,7 @@ export function PreviewPanel() {
             <button
               onClick={() => void handleHotReload()}
               disabled={isReloading}
-              className="p-1.5 rounded-full text-[var(--fb-muted)] hover:text-[var(--fb-ink)] hover:bg-[var(--fb-soft)] transition-colors disabled:opacity-50"
+              className="p-1.5 rounded-full text-[#748ea0] hover:text-[#c5fa75] hover:bg-[rgba(248,255,248,0.07)] transition-colors disabled:opacity-50"
               title="Hot reload the warm Flutter engine"
               aria-label="Hot reload preview"
             >
@@ -577,7 +580,7 @@ export function PreviewPanel() {
           <button
             onClick={() => setQaOpen(true)}
             disabled={!isRunning}
-            className="p-1.5 rounded-full text-[var(--fb-muted)] hover:text-[var(--fb-ink)] hover:bg-[var(--fb-soft)] transition-colors disabled:opacity-40"
+            className="p-1.5 rounded-full text-[#748ea0] hover:text-[#f8fff8] hover:bg-[rgba(248,255,248,0.07)] transition-colors disabled:opacity-40"
             title="Visual QA — capture mobile, tablet, and desktop"
             aria-label="Open visual QA"
           >
@@ -585,7 +588,7 @@ export function PreviewPanel() {
           </button>
           <button
             onClick={handleRefresh}
-            className="p-1.5 rounded-full text-[var(--fb-muted)] hover:text-[var(--fb-ink)] hover:bg-[var(--fb-soft)] transition-colors"
+            className="p-1.5 rounded-full text-[#748ea0] hover:text-[#f8fff8] hover:bg-[rgba(248,255,248,0.07)] transition-colors"
             title="Reload Preview"
             aria-label="Reload preview"
           >
@@ -596,7 +599,7 @@ export function PreviewPanel() {
               href={previewUrl}
               target="_blank"
               rel="noreferrer"
-              className="p-1.5 rounded-full text-[var(--fb-muted)] hover:text-[var(--fb-ink)] hover:bg-[var(--fb-soft)] transition-colors"
+              className="p-1.5 rounded-full text-[#748ea0] hover:text-[#f8fff8] hover:bg-[rgba(248,255,248,0.07)] transition-colors"
               title="Open in new tab"
               aria-label="Open preview in new tab"
             >
@@ -605,7 +608,7 @@ export function PreviewPanel() {
           )}
           <button
             onClick={() => setFullscreen(!fullscreen)}
-            className="p-1.5 rounded-full text-[var(--fb-muted)] hover:text-[var(--fb-ink)] hover:bg-[var(--fb-soft)] transition-colors"
+            className="p-1.5 rounded-full text-[#748ea0] hover:text-[#f8fff8] hover:bg-[rgba(248,255,248,0.07)] transition-colors"
             title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           >
@@ -619,10 +622,10 @@ export function PreviewPanel() {
               className={cn(
                 'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-semibold transition-colors disabled:opacity-50',
                 isRunning
-                  ? 'bg-[var(--fb-lime)] text-black'
+                  ? 'bg-[#c5fa75] text-[#00101e]'
                   : isBuilding
-                    ? 'bg-[var(--fb-cyan)] text-black'
-                    : 'bg-[var(--fb-ink)] text-[var(--fb-bg)]'
+                    ? 'bg-cyan-400 text-[#00101e]'
+                    : 'bg-[#c5fa75] text-[#00101e] hover:brightness-105 shadow-[0_2px_10px_rgba(197,250,117,0.25)]'
               )}
             >
               {isBuilding ? <Loader2 size={11} className="animate-spin" /> : <Hammer size={11} />}
@@ -634,8 +637,8 @@ export function PreviewPanel() {
 
       {/* ── Preview canvas ──────────────────────────────────────── */}
       <div ref={containerRef} className="flex-1 flex items-center justify-center overflow-hidden relative p-4">
-        {/* Paper canvas: no synthetic mock — the real Flutter build lives in the device. */}
-        <div className="absolute inset-0 bg-[var(--fb-bg)] ffb-workspace-grid" />
+        {/* Blueprint studio canvas */}
+        <div className="absolute inset-0 bg-[#000810] ffb-workspace-grid-dark" />
 
         {/* ── Device frame ── */}
         <div

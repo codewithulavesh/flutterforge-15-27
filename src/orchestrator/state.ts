@@ -122,6 +122,12 @@ export interface ProjectState {
   diagnostics: GateDiagnostic[];
   repairAttempts: number;
   logs: string[];
+  /**
+   * Additive, optional: structured failure info set when the pipeline halts in a
+   * controlled failure (fatal step, user abort, or exhausted repair budget /
+   * oscillation). Null/undefined on the success path.
+   */
+  failure?: { stepId: string; message: string } | null;
   /** Side-channel data passed between agents (not persisted). */
   _intakeData?: unknown;
   _uxNavigation?: unknown;

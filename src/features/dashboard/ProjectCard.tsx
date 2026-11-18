@@ -114,7 +114,7 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
 
   return (
     <>
-      <article className="group relative flex flex-col overflow-hidden rounded-[20px] border border-[var(--fb-line)] bg-[var(--fb-card)] shadow-[0_1px_0_rgba(255,255,255,0.04)_inset,0_12px_32px_-16px_rgba(0,0,0,0.6)] transition-all duration-200 hover:-translate-y-1 hover:border-[var(--fb-ink)]/40 hover:shadow-[0_1px_0_rgba(255,255,255,0.06)_inset,0_20px_40px_-16px_rgba(0,0,0,0.7)]">
+      <article className="group relative flex flex-col overflow-hidden rounded-[28px] border border-[var(--fb-line)] bg-[var(--fb-card)] shadow-[0_20px_48px_-18px_rgba(0,16,30,0.4)] transition-all duration-200 hover:-translate-y-1 hover:border-[var(--fb-lime)]/50 hover:shadow-[0_24px_54px_-16px_rgba(0,16,30,0.5)]">
         {/* Cover */}
         <div
           className="relative h-24 shrink-0 overflow-hidden border-b border-[var(--fb-line)]"
@@ -129,7 +129,7 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
               background: `radial-gradient(circle at 85% 15%, ${accentGlow} 0%, transparent 55%)`,
             }}
           />
-          <div className="absolute left-4 top-4 flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--fb-bg)]/70 text-[var(--fb-ink)] backdrop-blur-sm" style={{ color: accent }}>
+          <div className="absolute left-4 top-4 flex h-10 w-10 items-center justify-center rounded-[12px] bg-black/40 text-[var(--fb-ink)] backdrop-blur-sm border border-white/10" style={{ color: accent }}>
             <TemplateIcon size={18} />
           </div>
           <div className="absolute right-3 top-3" onClick={(e) => e.stopPropagation()}>
@@ -137,7 +137,7 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
               trigger={
                 <button
                   aria-label={`Project actions for ${project.name}`}
-                  className="flex h-8 w-8 items-center justify-center rounded-[8px] border border-[var(--fb-line)] bg-[var(--fb-bg)]/60 text-[var(--fb-muted)] backdrop-blur-sm transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)]"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--fb-line)] bg-black/30 text-[var(--fb-muted)] backdrop-blur-sm transition-colors hover:border-[var(--fb-lime)] hover:text-[var(--fb-lime)]"
                   type="button"
                 >
                   <MoreVertical size={14} />
@@ -151,7 +151,7 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
               <DropdownItem icon={<Trash2 size={14} />} danger onClick={() => setDeleteOpen(true)}>Delete</DropdownItem>
             </Dropdown>
           </div>
-          <span className="absolute bottom-3 left-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--fb-muted)]">
+          <span className="absolute bottom-3 left-4 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--fb-lime)]">
             {templateLabel}
           </span>
         </div>
@@ -160,11 +160,11 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
         <div className="flex flex-1 flex-col p-5">
           <div className="flex items-start justify-between gap-3">
             <h3
-              className="min-w-0 flex-1 truncate text-[15px] font-medium leading-tight tracking-[-0.02em] text-[var(--fb-ink)]"
+              className="min-w-0 flex-1 truncate ffb-display text-[15px] font-bold leading-tight tracking-[-0.02em] text-[var(--fb-ink)]"
               title={project.name}
             >
               <button
-                className="text-left after:absolute after:inset-0 after:rounded-[20px]"
+                className="text-left after:absolute after:inset-0 after:rounded-[28px]"
                 onClick={() => navigate(`/project/${project.id}`)}
                 type="button"
               >
@@ -187,7 +187,7 @@ export function ProjectCard({ project, index }: { project: Project; index: numbe
             <span className="font-mono text-[10px] text-[var(--fb-dim)]">
               {numeral} · Updated {timeAgo(project.updated_at)}
             </span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-[8px] border border-[var(--fb-line)] text-[var(--fb-muted)] transition-colors group-hover:border-[var(--fb-ink)] group-hover:text-[var(--fb-ink)]">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--fb-line)] text-[var(--fb-muted)] transition-colors group-hover:border-[var(--fb-lime)] group-hover:bg-[var(--fb-lime)] group-hover:text-[var(--fb-ink)]">
               <ArrowUpRight size={14} aria-hidden />
             </span>
           </div>

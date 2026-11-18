@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type AnchorHTMLAttributes, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, Check, Code2, Github, Globe2, Monitor, Moon, Plus, Sun } from 'lucide-react';
-import CardNav, { type CardNavItem } from '@/components/CardNav';
+import { ArrowDown, ArrowRight, ArrowUpRight, Check, Code2, Github, Globe2, Monitor, Play, Plus } from 'lucide-react';
+import { useReducedMotion } from 'motion/react';
+import Lenis from 'lenis';
 import { BrandLogo } from '@/components/BrandLogo';
 import { PromptLibrary } from '@/components/landing/PromptLibrary';
 import { Pricing } from '@/components/blocks/pricing';
@@ -53,27 +54,46 @@ class HomeScreen extends StatelessWidget {
   }
 }`;
 
-function NavAnchor({ href, children, ...props }: { href?: string } & AnchorHTMLAttributes<HTMLAnchorElement>) {
-  if (!href || href.startsWith('#')) {
-    return <a href={href} {...props}>{children}</a>;
-  }
-  return <Link to={href} {...props}>{children}</Link>;
-}
-
 export function AgentsLandingPage() {
   const navigate = useNavigate();
   const session = useAuthStore(state => state.session);
-  const [appearance, setAppearance] = useState<'dark' | 'light'>('dark');
+  const reduced = useReducedMotion() ?? false;
   const [prompt, setPrompt] = useState('');
   const [tab, setTab] = useState<(typeof TABS)[number]>('preview');
+  const [showDock, setShowDock] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const promptRef = useRef<HTMLInputElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
   const workspaceHref = session ? '/dashboard' : '/signup';
 
   useEffect(() => {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const title = document.title;
+    document.title = 'FlutterForge Agents — Your build partner';
+    const anchor = window.location.hash.slice(1);
+    if (anchor) document.getElementById(anchor)?.scrollIntoView();
+    else window.scrollTo({ top: 0, behavior: 'instant' });
+    return () => { document.title = title; };
+  }, []);
+
+  useEffect(() => {
+    if (reduced) return;
+    const lenis = new Lenis({ autoRaf: true, duration: 1.15, smoothWheel: true, anchors: true });
+    lenisRef.current = lenis;
+    return () => { lenis.destroy(); lenisRef.current = null; };
+  }, [reduced]);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const observer = new IntersectionObserver(([entry]) => setShowDock(!entry.isIntersecting), { rootMargin: '80px 0px 0px 0px' });
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const elements = pageRef.current?.querySelectorAll<HTMLElement>('[data-reveal]');
-    if (!elements || reduced.matches) return;
+    if (!elements || reduced) return;
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -84,11 +104,12 @@ export function AgentsLandingPage() {
     }, { threshold: 0.08 });
     elements.forEach(element => { element.classList.add('will-reveal'); observer.observe(element); });
     return () => observer.disconnect();
-  }, []);
+  }, [reduced]);
 
   function selectPrompt(text: string) {
     setPrompt(text);
-    document.getElementById('start')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+    if (lenisRef.current) lenisRef.current.scrollTo('#start');
+    else document.getElementById('start')?.scrollIntoView({ behavior: 'instant', block: 'center' });
     promptRef.current?.focus({ preventScroll: true });
   }
 
@@ -111,144 +132,79 @@ export function AgentsLandingPage() {
     document.getElementById(`workbench-tab-${TABS[next]}`)?.focus();
   }
 
-  const navItems: CardNavItem[] = [
-    {
-      label: 'Build',
-      description: 'From a prompt to a running Flutter app.',
-      links: [
-        { label: 'Explore agents', href: '#prompts' },
-        { label: 'Start with an idea', href: '#start' },
-        { label: 'How it works', href: '#workflow' },
-        { label: 'Workbench', href: '#workbench' },
-      ],
-    },
-    {
-      label: 'Ship',
-      description: 'Real Flutter files, desktop targets, honest answers.',
-      links: [
-        { label: 'Desktop export', href: '#desktop' },
-        { label: 'Pricing', href: '#pricing' },
-        { label: 'FAQ', href: '#faq' },
-        { label: 'Project team', href: '#team' },
-      ],
-    },
-    {
-      label: 'Classic',
-      description: 'The original studio landing page.',
-      links: [
-        { label: 'Classic landing', href: '/' },
-      ],
-    },
-    {
-      label: 'Account',
-      description: session ? 'Jump back into your workspace.' : 'Sign in to keep projects in sync.',
-      links: [
-        { label: session ? 'Dashboard' : 'Sign in', href: session ? '/dashboard' : '/login' },
-        ...(session ? [] : [{ label: 'Create account', href: '/signup' }]),
-      ],
-    },
-  ];
-
-  const navStyle = {
-    '--cn-solid': appearance === 'dark' ? '#0e0e10' : '#ffffff',
-    '--cn-panel': appearance === 'dark' ? '#0e0e10' : '#ffffff',
-    '--cn-edge': appearance === 'dark' ? '#2a2a2f' : '#dedee4',
-    '--cn-highlight': appearance === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.9)',
-    '--cn-shadow': appearance === 'dark' ? '0 18px 40px -32px rgba(0,0,0,0.9)' : '0 18px 40px -32px rgba(5,5,5,0.35)',
-    '--cn-text': appearance === 'dark' ? '#f5f5f5' : '#171719',
-    '--cn-muted': appearance === 'dark' ? 'rgba(245,245,245,0.62)' : 'rgba(23,23,25,0.6)',
-    '--cn-hover': appearance === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(5,5,5,0.05)',
-    '--cn-ring': appearance === 'dark' ? '#d9d2ff' : '#6750a1',
-    '--cn-tile': appearance === 'dark' ? '#151517' : '#f7f7f9',
-    '--cn-tile-rim': appearance === 'dark' ? 'inset 0 0 0 1px #2a2a2f' : 'inset 0 0 0 1px #dedee4',
-    '--cn-cta': appearance === 'dark' ? '#f5f5f5' : '#171719',
-    '--cn-cta-ink': appearance === 'dark' ? '#111113' : '#ffffff',
-    '--cn-cta-shadow': 'none',
-    '--cn-cta-hover': appearance === 'dark' ? 'brightness(0.92)' : 'brightness(1.15)',
-    '--cn-radius': '16px',
-  } as CSSProperties;
-
   return (
-    <div ref={pageRef} className="ff-agents" data-appearance={appearance}>
+    <div ref={pageRef} className="ff-agents">
       <a href="#hero" className="agents-skip">Skip to content</a>
-      <header className="sticky top-0 z-50 border-b border-[var(--fb-line)] bg-[var(--fb-bg)] px-3 py-2.5 sm:px-6">
-        <div className="mx-auto flex max-w-[1440px] items-center gap-2 sm:gap-3">
-          <div className="min-w-0 flex-1">
-            <CardNav
-              logo={
-                <span className="flex h-6 items-center gap-2.5">
-                  <BrandLogo size={24} alt="" />
-                  <span className="ffb-display whitespace-nowrap text-[15px] tracking-[-0.02em]">FlutterForge</span>
-                </span>
-              }
-              logoAlt="FlutterForge home"
-              logoHref="/"
-              items={navItems}
-              cta={{ label: session ? 'Dashboard' : 'Start building', href: workspaceHref }}
-              theme={appearance}
-              surface="solid"
-              openOn="click"
-              cardEffect="rise"
-              cardHeight={150}
-              maxWidth={1280}
-              linkComponent={NavAnchor}
-              ariaLabel="Main navigation"
-              style={navStyle}
-            />
-          </div>
-          <button
-            type="button"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[var(--fb-line)] bg-transparent text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)]"
-            onClick={() => {
-              const next = appearance === 'dark' ? 'light' : 'dark';
-              setAppearance(next);
-            }}
-            aria-label={`Switch to ${appearance === 'dark' ? 'light' : 'dark'} appearance`}
-          >
-            {appearance === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-        </div>
+      <header ref={headerRef} className="agents-header agents-container">
+        <nav aria-label="Agents navigation">
+          <Link to="/">Home</Link>
+          <a href="#hero" aria-current="page">Agents</a>
+          <a href="#prompts">Prompts</a>
+          <a href="#pricing">Plans</a>
+          <Link to={workspaceHref} aria-label={session ? 'Open studio' : 'Start building'}><ArrowUpRight aria-hidden="true" /></Link>
+        </nav>
       </header>
+      {showDock && <nav className="agents-dock" aria-label="Agents quick navigation">
+        <Link to="/">Home</Link>
+        <a href="#hero" aria-current="page">Agents</a>
+        <a href="#prompts">Prompts</a>
+        <a href="#pricing">Plans</a>
+        <Link className="agents-dock-cta" to={workspaceHref}>{session ? 'Studio' : 'Build'}<ArrowUpRight size={17} aria-hidden="true" /></Link>
+      </nav>}
 
       <main>
         <section id="hero" className="agents-hero agents-container">
-          <p className="agents-hero-label">Meet your Flutter building partner</p>
-          <h1>AI agents for building,<br className="agents-desktop-break" /> updating, and shipping apps.</h1>
-          <p className="agents-hero-description">From the first idea to the finishing touches.<br />Real Flutter source, a local preview, and an agent that works with you.</p>
-          <div className="agents-hero-actions"><a className="agents-button agents-button-primary" href="#start">Build your first app <ArrowRight size={15} /></a><a className="agents-button agents-button-secondary" href="#update">See what’s possible <ArrowUpRight size={15} /></a></div>
+          <p className="agents-hero-label"><BrandLogo size={22} alt="" /> FlutterForge <span>/ Agents</span></p>
+          <h1>Your next<br /><span>build partner.</span></h1>
+          <div className="agents-hero-layout">
+            <div className="agents-hero-copy">
+              <p className="agents-hero-description">Big idea. Small update.<br />An agent for every next step.</p>
+              <p className="agents-hero-note">Build, refine, and ship a Flutter app through conversation. Real source code. A local preview. Always yours.</p>
+              <div className="agents-hero-actions"><a className="agents-button agents-button-primary" href="#start">Start building <ArrowUpRight size={20} /></a><a className="agents-text-link" href="#update">Watch the films <Play size={13} fill="currentColor" /></a></div>
+            </div>
+            <div className="agents-hero-art" aria-label="Illustrative agent workflow: a brief becomes editable Flutter files">
+              <div className="agents-brief-card"><span>Your brief <ArrowUpRight size={17} /></span><p>“A habit tracker that makes<br />showing up feel good.”</p></div>
+              <div className="agents-file-card"><div><Code2 size={22} /><span>Made of real Flutter.</span></div><p><span>lib /</span> main.dart <Check size={16} /></p><p><span>screens /</span> home_screen.dart <Check size={16} /></p><p><span>theme /</span> app_theme.dart <Check size={16} /></p><a href="#workbench">Explore the workbench <ArrowUpRight size={17} /></a></div>
+              <span className="agents-art-caption">Example workflow · not a live generation</span>
+            </div>
+          </div>
+          <div className="agents-hero-foot"><span>From the first idea to the finishing touches.</span><a href="#prompts">Explore the possibilities <ArrowDown size={17} /></a></div>
         </section>
 
-        <section id="prompts" className="agents-container" aria-label="Explore FlutterForge agents"><PromptLibrary onUsePrompt={selectPrompt} /></section>
-
         <section id="start" className="agents-container agents-start agents-section" data-reveal>
-          <p className="agents-kicker">Start with your idea</p>
-          <h2>What would you like to build?</h2>
-          <p className="agents-muted">Describe a screen, a tool, or the app you keep wishing existed.</p>
+          <p className="agents-kicker">A good place to start</p>
+          <h2>You bring the idea.<br />Let’s build the app.</h2>
+          <p className="agents-muted">A screen, a tool, or the app you keep wishing existed.</p>
           <form onSubmit={event => { event.preventDefault(); submitPrompt(); }}>
-            <label className="sr-only" htmlFor="hero-prompt">Describe the app you want to build</label>
-            <div className="agents-prompt-input"><input ref={promptRef} id="hero-prompt" value={prompt} onChange={event => setPrompt(event.target.value)} maxLength={2000} placeholder="A habit tracker with weekly goals…" /><button type="submit" className="agents-button agents-button-primary" disabled={!prompt.trim()}>Build this app <ArrowRight size={15} /></button></div>
+            <label htmlFor="hero-prompt">Describe the app you want to build</label>
+            <div className="agents-prompt-input"><input ref={promptRef} id="hero-prompt" value={prompt} onChange={event => setPrompt(event.target.value)} maxLength={2000} placeholder="A habit tracker with weekly goals…" /><button type="submit" className="agents-button agents-button-primary" disabled={!prompt.trim()}>Build this app <ArrowUpRight size={18} /></button></div>
           </form>
-          <div className="agents-examples"><span>Try an idea</span>{EXAMPLES.map(example => <button type="button" key={example.label} onClick={() => selectPrompt(example.prompt)}>{example.label}<ArrowUpRight size={12} /></button>)}</div>
+          <div className="agents-examples"><span>Try an idea</span>{EXAMPLES.map(example => <button type="button" key={example.label} onClick={() => selectPrompt(example.prompt)}>{example.label}<ArrowUpRight size={14} /></button>)}</div>
+        </section>
+
+        <section id="prompts" className="agents-container agents-library-section" aria-label="Explore FlutterForge agents">
+          <div className="agents-section-heading" data-reveal><div><p className="agents-kicker">More than a first draft</p><h2>One partner.<br />Every next step.</h2></div><p>Watch it work, then try a prompt.<br />Choose one to make it your starting point, or copy it for later.</p></div>
+          <PromptLibrary onUsePrompt={selectPrompt} />
         </section>
 
         <section id="workflow" className="agents-container agents-section" data-reveal>
-          <div className="agents-section-heading"><div><p className="agents-kicker">A shorter path to a working app</p><h2>Describe. Build. Make it yours.</h2></div><p>One conversation, real files, and a preview that keeps you close to what you’re making.</p></div>
+          <div className="agents-section-heading"><div><p className="agents-kicker">A shorter path to a working app</p><h2>Describe. Build.<br />Make it yours.</h2></div><p>One conversation, real files, and a preview that keeps you close to what you’re making.</p></div>
           <div className="agents-workflow-grid">
             {[
               ['01', 'Start a conversation', 'Describe your screens and how they should work. The agent turns your brief into a Flutter project.'],
               ['02', 'See it take shape', 'Run a local web preview. Compiler errors feed back to the agent for up to two automatic repair rounds.'],
               ['03', 'Keep making it better', 'Ask for the next change, inspect the source, or export the project and continue in your own tools.'],
-            ].map(([number, title, body]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{body}</p></article>)}
+            ].map(([number, title, body]) => <article key={number}><span>{number}<ArrowUpRight size={22} /></span><h3>{title}</h3><p>{body}</p></article>)}
           </div>
         </section>
 
         <section id="workbench" className="agents-container agents-section" data-reveal>
-          <div className="agents-section-heading"><div><p className="agents-kicker">Inside the workbench</p><h2>Your app. Not a black box.</h2></div><Link className="agents-text-link" to={workspaceHref}>Open the workbench <ArrowUpRight size={16} /></Link></div>
+          <div className="agents-section-heading"><div><p className="agents-kicker">Inside the workbench</p><h2>Your app.<br />Not a black box.</h2></div><Link className="agents-button agents-button-primary" to={workspaceHref}>Open the workbench <ArrowUpRight size={18} /></Link></div>
           <div className="agents-workbench">
-            <div className="agents-workbench-bar"><span><BrandLogo size={18} alt="" /> Orbit <small>Illustrative project</small></span><div role="tablist" aria-label="Workbench view" onKeyDown={onTabKeyDown}>{TABS.map(id => <button key={id} type="button" id={`workbench-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="workbench-panel" tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{TAB_LABELS[id]}</button>)}</div></div>
+            <div className="agents-workbench-bar"><span><BrandLogo size={20} alt="" /> Orbit <small>Illustrative project</small></span><div role="tablist" aria-label="Workbench view" onKeyDown={onTabKeyDown}>{TABS.map(id => <button key={id} type="button" id={`workbench-tab-${id}`} role="tab" aria-selected={tab === id} aria-controls="workbench-panel" tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>{TAB_LABELS[id]}</button>)}</div></div>
             <div id="workbench-panel" role="tabpanel" aria-labelledby={`workbench-tab-${tab}`} tabIndex={0} className="agents-workbench-panel">
-              {tab === 'preview' && <div className="agents-workbench-preview"><div className="agents-preview-sidebar"><span>Project</span><p><Code2 size={14} /> lib / main.dart</p><p><Code2 size={14} /> screens / home_screen.dart</p><p><Code2 size={14} /> theme / app_theme.dart</p><div><Check size={15} /><p>Editable Flutter source.<br />No proprietary runtime.</p></div></div><div className="agents-preview-canvas"><div className="agents-preview-app"><span className="agents-kicker">orbit</span><h3>A little better,<br />every day.</h3><div className="agents-preview-progress"><span>This week</span><strong>4 <small>/ 7 days</small></strong><div>{[35, 65, 50, 85, 70, 25, 20].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div></div>{['Morning run', 'Read 20 pages', 'Stretch'].map((habit, index) => <p key={habit}><span>{index < 2 && <Check size={12} />}</span>{habit}</p>)}</div></div></div>}
-              {tab === 'source' && <div className="agents-source-panel"><p>lib/screens/home_screen.dart <span>Dart</span></p><pre><code>{SOURCE}</code></pre></div>}
+              {tab === 'preview' && <div className="agents-workbench-preview"><div className="agents-preview-sidebar"><span>Project files</span><p><Code2 size={15} /> lib / main.dart</p><p><Code2 size={15} /> screens / home_screen.dart</p><p><Code2 size={15} /> theme / app_theme.dart</p><div><Check size={18} /><p>Editable Flutter source.<br />No proprietary runtime.</p></div></div><div className="agents-preview-canvas"><div className="agents-preview-app"><span className="agents-kicker">orbit</span><h3>A little better,<br />every day.</h3><div className="agents-preview-progress"><span>This week</span><strong>4 <small>/ 7 days</small></strong><div>{[35, 65, 50, 85, 70, 25, 20].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div></div>{['Morning run', 'Read 20 pages', 'Stretch'].map((habit, index) => <p key={habit}><span>{index < 2 && <Check size={12} />}</span>{habit}</p>)}</div></div></div>}
+              {tab === 'source' && <div className="agents-source-panel"><p>lib/screens/home_screen.dart <span>Dart</span></p><pre data-lenis-prevent><code>{SOURCE}</code></pre></div>}
               {tab === 'build' && <div className="agents-build-panel"><p>Example compiler and repair sequence</p><ol><li>Write the Flutter source files</li><li>Run <code>flutter analyze</code></li><li className="agents-build-warning">Analyzer reports an undefined name in home_screen.dart</li><li>Send the diagnostic and file context to the agent</li><li>Apply the repair and run the analyzer again</li><li><Check size={15} /> Start the local web preview when the build passes</li></ol><small>Illustration of the repair loop, not a live build.</small></div>}
             </div>
           </div>
@@ -256,20 +212,20 @@ export function AgentsLandingPage() {
         </section>
 
         <section id="desktop" className="agents-container agents-section agents-export" data-reveal>
-          <div><p className="agents-kicker">Built to leave the studio</p><h2>Your next step.<br />Your own tools.</h2><p>Preview on the web, prepare desktop runners, and export an ordinary Flutter project. Signing and distribution stay in your hands.</p><Link to={workspaceHref} className="agents-text-link">Start building <ArrowUpRight size={16} /></Link></div>
-          <div className="agents-export-targets">{[[Globe2, 'Web preview', 'Run locally in your browser'], [Monitor, 'macOS & Windows', 'Prepare desktop runner folders'], [Code2, 'Flutter source', 'Open, edit, and build anywhere']].map(([Icon, label, description]) => { const TargetIcon = Icon as typeof Globe2; return <div key={String(label)}><TargetIcon size={24} strokeWidth={1.5} /><div><h3>{String(label)}</h3><p>{String(description)}</p></div><ArrowUpRight size={16} /></div>; })}</div>
+          <div><p className="agents-kicker">Built to leave the studio</p><h2>No lock-in.<br />Just your app.</h2><p>Preview on the web, prepare desktop runners, and export an ordinary Flutter project. Signing and distribution stay in your hands.</p><Link to={workspaceHref} className="agents-text-link">Start building <ArrowUpRight size={18} /></Link></div>
+          <div className="agents-export-targets">{[[Globe2, 'Web preview', 'Run locally in your browser'], [Monitor, 'macOS & Windows', 'Prepare desktop runner folders'], [Code2, 'Flutter source', 'Open, edit, and build anywhere']].map(([Icon, label, description]) => { const TargetIcon = Icon as typeof Globe2; return <div key={String(label)}><TargetIcon size={28} strokeWidth={1.5} /><div><h3>{String(label)}</h3><p>{String(description)}</p></div><ArrowUpRight size={20} /></div>; })}</div>
         </section>
 
         <Pricing plans={LANDING_PLANS} eyebrow="Plans for your next project" title="Room to build, at your pace." className="agents-pricing" />
 
-        <section id="faq" className="agents-container agents-section agents-faq" data-reveal><div><p className="agents-kicker">A few more details</p><h2>Good questions.</h2></div><div>{FAQS.map(item => <details key={item.q}><summary>{item.q}<Plus size={17} /></summary><p>{item.a}</p></details>)}</div></section>
+        <section id="faq" className="agents-container agents-section agents-faq" data-reveal><div><p className="agents-kicker">Before you dive in</p><h2>Good<br />questions.</h2></div><div>{FAQS.map(item => <details key={item.q}><summary>{item.q}<Plus size={20} /></summary><p>{item.a}</p></details>)}</div></section>
 
-        <section id="team" className="agents-container agents-section agents-team" data-reveal><div><p className="agents-kicker">The people behind the project</p><h2>Built in Belagavi.</h2><p>A Phase 2 project by OnUs Devs at S. G. Balekundri Institute of Technology, VTU.</p></div><div className="agents-team-list">{TEAM.map(member => <div key={member.name}><h3>{member.name}</h3><p>{member.role}</p></div>)}</div></section>
+        <section id="team" className="agents-container agents-section agents-team" data-reveal><div><p className="agents-kicker">The people behind the project</p><h2>Built in<br />Belagavi.</h2><p>A Phase 2 project by OnUs Devs at S. G. Balekundri Institute of Technology, VTU.</p></div><div className="agents-team-list">{TEAM.map(member => <div key={member.name}><h3>{member.name}</h3><p>{member.role}</p></div>)}</div></section>
 
-        <section className="agents-container agents-final-cta" data-reveal><h2>Make something<br />you want to use.</h2><a className="agents-button agents-button-primary" href="#start">Start with an idea <ArrowUpRight size={16} /></a></section>
+        <section className="agents-container agents-final-cta" data-reveal><p className="agents-kicker">Your next idea is a conversation away.</p><h2>Less someday.<br />More start.</h2><a className="agents-button agents-button-primary" href="#start">Make it happen <ArrowUpRight size={20} /></a></section>
       </main>
 
-      <footer className="agents-container agents-footer"><div className="agents-footer-main"><div><Link className="agents-brand" to="/"><BrandLogo size={25} alt="" />FlutterForge</Link><p>A local-first studio for real Flutter apps.</p><a href={REPO} target="_blank" rel="noreferrer" className="agents-text-link"><Github size={15} /> Source on GitHub <ArrowUpRight size={13} /></a></div><nav aria-label="Footer product"><h3>Product</h3><a href="#prompts">Explore agents</a><a href="#workflow">How it works</a><a href="#workbench">Workbench</a><a href="#desktop">Export</a><a href="#pricing">Pricing</a></nav><nav aria-label="Footer resources"><h3>Resources</h3><a href="#faq">FAQ</a><a href="#team">Project team</a><Link to={workspaceHref}>{session ? 'Dashboard' : 'Create account'}</Link>{!session && <><Link to="/login">Log in</Link><Link to="/forgot-password">Reset password</Link></>}</nav><nav aria-label="Legal"><h3>Legal</h3><Link to="/legal/terms">Terms of use</Link><Link to="/legal/privacy">Privacy notice</Link><Link to="/legal/permissions">Permissions</Link></nav></div><div className="agents-footer-bottom"><span>FlutterForge · OnUs Devs</span><a href="#hero">Back to top ↑</a></div></footer>
+      <footer className="agents-container agents-footer"><div className="agents-footer-main"><div><Link className="agents-brand" to="/"><BrandLogo size={28} alt="" />FlutterForge</Link><p>A local-first studio for real Flutter apps.</p><a href={REPO} target="_blank" rel="noreferrer" className="agents-text-link"><Github size={17} /> Source on GitHub <ArrowUpRight size={15} /></a></div><nav aria-label="Footer product"><h3>Product</h3><a href="#prompts">Explore agents</a><a href="#workflow">How it works</a><a href="#workbench">Workbench</a><a href="#desktop">Export</a><a href="#pricing">Pricing</a></nav><nav aria-label="Footer resources"><h3>Resources</h3><a href="#faq">FAQ</a><a href="#team">Project team</a><Link to={workspaceHref}>{session ? 'Dashboard' : 'Create account'}</Link>{!session && <><Link to="/login">Log in</Link><Link to="/forgot-password">Reset password</Link></>}</nav><nav aria-label="Legal"><h3>Legal</h3><Link to="/legal/terms">Terms of use</Link><Link to="/legal/privacy">Privacy notice</Link><Link to="/legal/permissions">Permissions</Link></nav></div><div className="agents-footer-bottom"><span>FlutterForge · OnUs Devs</span><a href="#hero">Back to top <ArrowRight size={16} /></a></div></footer>
     </div>
   );
 }

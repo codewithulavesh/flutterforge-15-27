@@ -165,20 +165,20 @@ export function CodeEditor() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--fb-bg)]">
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--fb-line)] bg-[var(--fb-bg)] px-3 py-2 shrink-0">
+    <div className="flex flex-col h-full bg-[#00101e]">
+      <div className="flex items-center justify-between gap-2 border-b border-[rgba(248,255,248,0.10)] bg-[rgba(248,255,248,0.03)] px-3 py-2 shrink-0">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="shrink-0 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-muted)]">
+          <div className="shrink-0 rounded-full border border-[rgba(248,255,248,0.14)] bg-[rgba(248,255,248,0.05)] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#748ea0]">
             Editor
           </div>
           {!activeFile && (
-            <span className="shrink-0 rounded-full border border-[var(--fb-line)] px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--fb-dim)]">
+            <span className="shrink-0 rounded-full border border-[rgba(248,255,248,0.10)] px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-[#748ea0]">
               204 · No content
             </span>
           )}
           {activeFile && (
             <div className="min-w-0 overflow-hidden">
-              <div className="truncate text-[11.5px] font-semibold text-[var(--fb-ink)]">{activeFile}</div>
+              <div className="truncate text-[11.5px] font-semibold text-[#f8fff8]">{activeFile}</div>
               <div className={cn('mt-0.5 font-mono text-[9px] uppercase tracking-[0.12em]', activeFile && isDirty(activeFile) ? 'text-[var(--fb-orange)]' : 'text-[var(--fb-dim)]')}>
                 {currentFile ? (isDirty(activeFile) ? 'Unsaved changes' : 'Saved') : 'No file selected'}
               </div>
@@ -188,7 +188,7 @@ export function CodeEditor() {
         {activeFile && (
           <div className="flex shrink-0 items-center gap-2">
             {isBufferEmpty && (
-              <span className="rounded-full border border-[var(--fb-line)] px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--fb-dim)]">
+              <span className="rounded-full border border-[rgba(248,255,248,0.10)] px-2 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-[#748ea0]">
                 204 · Empty
               </span>
             )}
@@ -196,7 +196,7 @@ export function CodeEditor() {
               onClick={handleSave}
               disabled={!isDirty(activeFile)}
               title="Save file (Cmd/Ctrl+S)"
-              className="flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1.5 text-[10px] font-semibold text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)] disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-[rgba(248,255,248,0.14)] bg-[rgba(248,255,248,0.05)] px-3 py-1.5 text-[10px] font-semibold text-[#748ea0] transition-colors hover:border-[rgba(197,250,117,0.40)] hover:text-[#c5fa75] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Save size={12} />
               Save
@@ -206,7 +206,7 @@ export function CodeEditor() {
       </div>
 
       {/* Open file tabs */}
-      <div className="flex items-stretch border-b border-[var(--fb-line)] bg-[var(--fb-bg)] shrink-0">
+      <div className="flex items-stretch border-b border-[rgba(248,255,248,0.10)] bg-[rgba(248,255,248,0.02)] shrink-0">
         <div className="flex items-center flex-1 min-w-0 overflow-x-auto ff-scrollbar">
           {openTabs.length === 0 && (
             <div className="px-4 py-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--fb-dim)]">No files open</div>

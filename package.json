@@ -21,7 +21,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
     "test:frontend": "vitest run",
-    "test:server": "node --import tsx/esm --test server/test/*.test.ts",
+    "test:server": "node --import tsx/esm --test server/test/*.test.ts server/test/platform/*.test.ts",
+    "test:platform": "node --import tsx/esm --test server/test/platform/*.test.ts",
     "check": "npm run typecheck && npm run test:server && npm run build",
     "add:ai-chat-4": "npx shadcn@latest add @reactbits-pro/ai-chat-4"
   },

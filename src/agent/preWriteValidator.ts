@@ -35,10 +35,110 @@ export interface PreWriteValidation {
   gate: { passed: boolean; blockers: string[] };
 }
 
+export interface UnresolvedImport {
+  path: string;
+  uri: string;
+  kind: 'package' | 'relative';
+  message: string;
+}
+
 interface FileLike {
   path: string;
   content: string | null;
 }
+
+const DART_IMPORT = /(?:import|export|part)\s+['"]([^'"]+)['"]/g;
+
+function normalizePosix(value: string): string {
+  const out: string[] = [];
+  for (const part of value.replaceAll('\\', '/').split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  return out.join('/');
+}
+
+function resolveRelativeImport(fromFile: string, uri: string): string {
+  const directory = fromFile.split('/').slice(0, -1).join('/');
+  return normalizePosix(`${directory}/${uri}`);
+}
+
+function relativePath(fromFile: string, target: string): string {
+  const from = fromFile.split('/').slice(0, -1);
+  const to = target.split('/');
+  let shared = 0;
+  while (shared < from.length && shared < to.length && from[shared] === to[shared]) shared += 1;
+  const up = Array.from({ length: from.length - shared }, () => '..');
+  const down = to.slice(shared);
+  const value = [...up, ...down].join('/');
+  return value.startsWith('.') ? value : `./${value}`;
+}
+
+/**
+ * In Dart every URI that is not `dart:` or `package:` is a relative file
+ * reference, including ones written without `./` (e.g. `import 'model.dart'`).
+ */
+function isRelativeUri(uri: string): boolean {
+  return Boolean(uri) && !uri.startsWith('dart:') && !uri.startsWith('package:');
+}
+
+/**
+ * Resolve the generated import graph without running Dart. External packages
+ * are not inspected; app-namespace and relative imports must point at a real
+ * file. QA and the artifact gate share this check so they cannot disagree.
+ */
+export function findUnresolvedImports(input: Array<{ path: string; content: string }>): UnresolvedImport[] {
+  const files = new Map<string, string>();
+  for (const file of input) {
+    if (file.path.endsWith('.dart')) files.set(file.path, file.content);
+  }
+  const pubspec = input.find((file) => file.path === 'pubspec.yaml')?.content ?? '';
+  const appName = pubspecPackageName(pubspec);
+  const unresolved: UnresolvedImport[] = [];
+  const seen = new Set<string>();
+
+  const push = (entry: UnresolvedImport) => {
+    const key = `${entry.path}\0${entry.uri}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    unresolved.push(entry);
+  };
+
+  for (const [filePath, content] of files) {
+    for (const match of content.matchAll(DART_IMPORT)) {
+      const uri = match[1];
+      if (!uri || uri.startsWith('dart:')) continue;
+      if (uri.startsWith('package:')) {
+        if (!appName) continue;
+        const prefix = `package:${appName}/`;
+        if (!uri.startsWith(prefix)) continue;
+        const target = `lib/${uri.slice(prefix.length)}`;
+        if (files.has(target)) continue;
+        push({
+          path: filePath,
+          uri,
+          kind: 'package',
+          message: `import '${uri}' does not resolve to any file in the project`,
+        });
+        continue;
+      }
+      if (!isRelativeUri(uri)) continue;
+      const target = resolveRelativeImport(filePath, uri);
+      const candidates = target.endsWith('.dart') ? [target] : [`${target}.dart`, target, `${target}/index.dart`];
+      if (candidates.some((candidate) => files.has(candidate))) continue;
+      push({
+        path: filePath,
+        uri,
+        kind: 'relative',
+        message: `relative import '${uri}' does not resolve to any file in the project`,
+      });
+    }
+  }
+
+  return unresolved;
+}
+
 
 const DART_NAME = /^[a-z][a-z0-9_]*$/;
 
@@ -70,7 +170,6 @@ const KNOWN_VERSIONS: Record<string, string> = {
   smooth_page_indicator: '^1.2.0+3', pin_code_fields: '^8.0.1',
 };
 
-const YAML_KEY_VALUE = /^([A-Za-z0-9_-]+)\s*:/;
 const PUBSPEC_PACKAGE = /^([A-Za-z0-9_]+)\s*:/;
 
 /**
@@ -355,6 +454,46 @@ export function validateProjectFiles(
     }
   }
 
+  /* ── 3b. Relative imports must resolve to real files ──────────── */
+  {
+    const byBasename = new Map<string, string[]>();
+    for (const file of allDart) {
+      const base = file.path.split('/').pop() ?? '';
+      byBasename.set(base, [...(byBasename.get(base) ?? []), file.path]);
+    }
+
+    for (const file of allDart) {
+      const importMatches = [...file.content.matchAll(DART_IMPORT)];
+      let next = file.content;
+      const fixesHere: string[] = [];
+      for (const match of importMatches) {
+        const uri = match[1];
+        if (!isRelativeUri(uri)) continue;
+        const target = resolveRelativeImport(file.path, uri);
+        const candidates = target.endsWith('.dart')
+          ? [target]
+          : [`${target}.dart`, target, `${target}/index.dart`];
+        if (candidates.some((candidate) => fileMap.has(candidate))) continue;
+        const basename = target.split('/').pop() ?? '';
+        const targets = byBasename.get(basename) ?? [];
+        if (targets.length === 1) {
+          const replacement = relativePath(file.path, targets[0]);
+          next = next.split(`'${uri}'`).join(`'${replacement}'`);
+          fixesHere.push(`${uri} → ${replacement}`);
+        } else {
+          issues.push({
+            path: file.path,
+            message: `relative import '${uri}' does not resolve to any file in the project`,
+          });
+        }
+      }
+      if (fixesHere.length > 0 && next !== file.content) {
+        fixes.push({ path: file.path, content: next, message: `fixed relative imports: ${fixesHere.join(', ')}` });
+        file.content = next;
+      }
+    }
+  }
+
   /* ── 4. Inject missing known dependencies into pubspec.yaml ───── */
   if (pubspecText !== null && depsToAdd.length > 0) {
     const { text, changed } = insertDependencies(pubspecText, depsToAdd);
@@ -402,5 +541,6 @@ export function validateProjectFiles(
     }
   }
 
-  return { fixes, issues, changes, gate: { passed: blockers.length === 0, blockers } };
+  const uniqueBlockers = [...new Set(blockers)];
+  return { fixes, issues, changes, gate: { passed: uniqueBlockers.length === 0, blockers: uniqueBlockers } };
 }

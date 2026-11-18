@@ -217,6 +217,75 @@ test('terminal runs real allow-listed commands in the project workspace', async 
   assert.equal(forbidden.status, 400);
 });
 
+async function terminal(projectId: string, command: string) {
+  const response = await fetch(`${baseUrl}/api/terminal/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project_id: projectId, command }),
+  });
+  return { response, body: await response.json() as any };
+}
+
+test('terminal supports workspace-scoped writes and rejects unsafe input', async () => {
+  const { response: touchRes } = await terminal('project-one', 'touch scratch.txt');
+  assert.equal(touchRes.status, 200);
+
+  const { body: lsBody } = await terminal('project-one', 'ls');
+  assert.match(lsBody.output, /scratch\.txt/);
+
+  const { response: rmDirRes, body: rmDirBody } = await terminal('project-one', 'rm lib');
+  assert.equal(rmDirRes.status, 400);
+  assert.match(rmDirBody.error, /directory/i);
+
+  const { response: rmRes } = await terminal('project-one', 'rm scratch.txt');
+  assert.equal(rmRes.status, 200);
+  const { body: lsAfter } = await terminal('project-one', 'ls');
+  assert.doesNotMatch(lsAfter.output, /scratch\.txt/);
+
+  const { response: metaRes, body: metaBody } = await terminal('project-one', 'cat pubspec.yaml && echo bad');
+  assert.equal(metaRes.status, 400);
+  assert.match(metaBody.error, /metacharacter/i);
+
+  const { body: findBody } = await terminal('project-one', 'find lib -name "*.dart"');
+  assert.match(findBody.output, /main\.dart/);
+});
+
+test('verify endpoint requires files and never verifies unsafe or incomplete projects', async () => {
+  const empty = await fetch(`${baseUrl}/api/verify/verify-route-empty`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [] }),
+  });
+  assert.equal(empty.status, 400);
+
+  const escaped = await fetch(`${baseUrl}/api/verify/verify-route-escape`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: [
+        { path: 'pubspec.yaml', content: 'name: verify_route\n' },
+        { path: '../../etc/passwd', content: 'x' },
+      ],
+    }),
+  });
+  assert.equal(escaped.status, 200);
+  const escapedBody: any = await escaped.json();
+  assert.equal(escapedBody.verified, false);
+  assert.equal(escapedBody.skipped, true);
+  assert.match(escapedBody.summary, /unsafe|escape/i);
+
+  const noPubspec = await fetch(`${baseUrl}/api/verify/verify-route-no-pubspec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ path: 'lib/main.dart', content: 'void main() {}\n' }] }),
+  });
+  assert.equal(noPubspec.status, 200);
+  const noPubspecBody: any = await noPubspec.json();
+  assert.equal(noPubspecBody.verified, false);
+  assert.equal(noPubspecBody.skipped, true);
+  assert.match(noPubspecBody.summary, /pubspec\.yaml/);
+});
+
 test('preview compiler builds and serves the app from the same origin', async () => {
   const files = [
     { path: 'pubspec.yaml', content: 'name: preview_app\n' },

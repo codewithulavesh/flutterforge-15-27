@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowUpRight,
   Check,
@@ -8,14 +8,12 @@ import {
   RefreshCw,
   Rocket,
   Wrench,
-  FileCode2,
-  MousePointer2,
   Play,
-  Pause,
-  Plus,
   type LucideIcon,
 } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
+import { FilmDialog } from './FilmDialog';
+import { getFilm } from './films';
 
 type PromptGroup = {
   title: string;
@@ -202,57 +200,35 @@ const PROMPT_CATEGORIES: PromptCategory[] = [
   },
 ];
 
-const DEMO_PROMPTS: Record<string, string> = {
-  update: 'Rename the app to Orbit and add a weekly goal.',
-  style: 'Give the app a violet accent and a softer card style.',
-  add: 'Add a progress screen with a weekly activity chart.',
-  fix: 'Fix the overflow in the habit card and check the build.',
-  ship: 'Prepare the project for a desktop export.',
+const CATEGORY_FILMS: Record<string, { filmId: string; poster: string }> = {
+  update: { filmId: '01-update', poster: '/films/01-update.jpg' },
+  style: { filmId: '02-restyle', poster: '/films/02-restyle.jpg' },
+  add: { filmId: '03-add', poster: '/films/03-add.jpg' },
+  fix: { filmId: '04-ship', poster: '/films/04-fix.jpg' },
+  ship: { filmId: '04-ship', poster: '/films/04-ship-export.jpg' },
 };
 
-function AgentDemo({ category }: { category: PromptCategory }) {
-  const [playing, setPlaying] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: 0.25 });
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
+function CategoryFilm({ category }: { category: PromptCategory }) {
+  const [open, setOpen] = useState(false);
+  const config = CATEGORY_FILMS[category.id];
+  const film = config ? getFilm(config.filmId) : undefined;
+  if (!film) return null;
   return (
-    <div ref={ref} className="agents-demo" data-playing={playing && visible} data-kind={category.id}>
-      <div className="agents-demo-bar"><span><BrandLogo size={18} alt="" /> FlutterForge</span><span>Illustrative demo</span></div>
-      <div className="agents-demo-body" aria-hidden="true">
-        <div className="agents-demo-conversation">
-          <span className="agents-demo-label">Your project, in conversation</span>
-          <div className="agents-demo-request">{DEMO_PROMPTS[category.id]}</div>
-          <div className="agents-demo-response">
-            <span className="agents-demo-agent"><BrandLogo size={18} alt="" /> FlutterForge</span>
-            <p>{category.id === 'ship' ? 'Preparing the project files and desktop runners.' : 'Updating the project and checking the preview.'}</p>
-            <div className="agents-demo-line" /><div className="agents-demo-line" />
-            <span className="agents-demo-file"><FileCode2 size={14} /> {category.id === 'style' ? 'lib/theme.dart' : category.id === 'ship' ? 'pubspec.yaml' : 'home_screen.dart'} <Check size={12} /></span>
-          </div>
-          <div className="agents-demo-composer">Describe the next change… <ArrowUpRight size={14} /></div>
-        </div>
-        <div className="agents-demo-preview">
-          <div className="agents-app">
-            <div className="agents-app-top"><span>9:41</span><span>•••</span></div>
-            <div className="agents-app-heading"><strong><span className="agents-app-old">habit</span><span className="agents-app-new">orbit</span></strong><span className="agents-app-avatar">A</span></div>
-            <p className="agents-app-greeting">A little better, every day.</p>
-            <div className="agents-app-chart">
-              <span>This week</span><strong>4 <small>/ 7 days</small></strong>
-              <div className="agents-chart-bars">{[40, 62, 47, 85, 68, 30, 22].map((height, index) => <i key={index} style={{ height: `${height}%`, animationDelay: `${index * 80}ms` }} />)}</div>
-              <div className="agents-chart-days">{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => <span key={index}>{day}</span>)}</div>
-            </div>
-            <div className="agents-app-habits">{['Morning run', 'Read 20 pages', 'Stretch'].map((habit, index) => <div key={habit}><span>{index < 2 && <Check size={11} />}</span>{habit}</div>)}</div>
-            <div className="agents-app-add"><Plus size={12} /> Add habit</div>
-          </div>
-          <MousePointer2 className="agents-demo-cursor" size={24} fill="currentColor" />
-        </div>
+    <div className="agents-film-feature" style={{ '--film-accent': film.accent } as CSSProperties}>
+      <div className="agents-film-feature-bar">
+        <span><BrandLogo size={18} alt="" /> FlutterForge</span>
+        <span>{film.num} / 04 · {film.duration} · Live capture</span>
       </div>
-      <button type="button" className="agents-demo-play" onClick={() => setPlaying(!playing)} aria-label={`${playing ? 'Pause' : 'Play'} ${category.label} demo`}>
-        {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}<span>{playing ? 'Pause demo' : 'Play demo'}</span>
+      <button
+        type="button"
+        className="agents-film-feature-stage"
+        onClick={() => setOpen(true)}
+        aria-label={`Play the ${film.title} film, ${film.duration}`}
+      >
+        <img src={config.poster} alt="" width={1280} height={720} loading="lazy" decoding="async" />
+        <span className="agents-film-feature-play" aria-hidden="true"><Play size={22} fill="currentColor" /></span>
       </button>
+      {open && <FilmDialog film={film} poster={config.poster} onClose={() => setOpen(false)} />}
     </div>
   );
 }
@@ -366,7 +342,7 @@ export function PromptLibrary({ onUsePrompt }: { onUsePrompt: (prompt: string) =
               <div className="agents-category-copy"><h2 id={`${category.id}-title`}>{category.heading}</h2><p>{category.description}</p></div>
             </div>
             <div className="agents-card-stack">
-              <div className="agents-stack-card"><div className="agents-stack-surface"><AgentDemo category={category} /></div></div>
+              <div className="agents-stack-card"><div className="agents-stack-surface agents-film-surface"><CategoryFilm category={category} /></div></div>
               {category.groups.map(group => (
                 <div key={group.title} className="agents-stack-card">
                   <article className="agents-stack-surface agents-prompt-group" aria-label={group.title}>

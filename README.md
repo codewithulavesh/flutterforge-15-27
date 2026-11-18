@@ -342,10 +342,37 @@ Dark mode is still available from the theme toggle.
 
 ```bash
 npm run typecheck     # TS
-npm run test:server   # node:test (unit + integration with a fixture dsh)
+npm run test:server   # node:test (unit + integration, legacy + platform suites)
+npm run test:platform # node:test — control-plane tests only
 npm run build         # Vite production build
 npm run check         # all three
 ```
+
+## Platform control plane
+
+`server/platform/` adds the enterprise control plane beneath the harness: durable
+DAG orchestration with crash recovery and approval gates, a transactional two-phase
+patch engine with content-addressed project revisions, a hash-chained audit log,
+SPDX SBOM generation, JSON-L logging with secret redaction, W3C trace context,
+Prometheus metrics and a JWT/RBAC gateway. See
+[`docs/PLATFORM_CONTROL_PLANE.md`](docs/PLATFORM_CONTROL_PLANE.md) for the pillar map,
+API reference, failure semantics and honest limitations.
+
+```bash
+# start the server (it initialises the platform DB on boot)
+npm run server
+
+# inspect implemented capabilities
+curl -s http://127.0.0.1:8787/api/platform/capabilities | jq '.pillars[] | {pillar, status}'
+
+# apply a transactional patch + revision (202 when an approval gate is requested)
+curl -s -X POST http://127.0.0.1:8787/api/platform/projects/demo/patch \
+  -H 'Content-Type: application/json' \
+  -d '{"files":[{"path":"pubspec.yaml","content":"name: demo\n"}],"message":"sync"}'
+```
+
+`/api/platform/*` serves its own auth, rate limits and security headers; the legacy
+`/api/*` surface is unchanged.
 
 The integration test drives the real HTTP/SSE surface with `server/test/fixture-dsh.mjs`,
 so it verifies workspace isolation, path traversal rejection, event projection,

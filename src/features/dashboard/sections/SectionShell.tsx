@@ -3,10 +3,10 @@ import { cn } from '@/utils/cn';
 
 /** Shared class strings so every dashboard section uses the same controls. */
 export const primaryButtonClass =
-  'inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[var(--fb-ink)] px-4 text-[12px] font-semibold text-[var(--fb-bg)] transition-transform hover:-translate-y-px disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[var(--fb-ink)] px-5 text-[12px] font-bold uppercase tracking-wider text-[var(--fb-lime)] transition-all hover:-translate-y-px hover:shadow-[0_4px_18px_rgba(0,16,30,0.3)] disabled:pointer-events-none disabled:opacity-50';
 
 export const secondaryButtonClass =
-  'inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-[var(--fb-line)] px-4 text-[12px] font-medium text-[var(--fb-muted)] transition-colors hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)] disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-[var(--fb-ink)]/30 bg-white/40 backdrop-blur-sm px-4 text-[12px] font-semibold text-[var(--fb-ink)] transition-colors hover:border-[var(--fb-ink)] hover:bg-white disabled:pointer-events-none disabled:opacity-50';
 
 export const fieldClass =
   'h-11 w-full rounded-xl border border-[var(--fb-line)] bg-[var(--fb-bg)] px-3 text-[13.5px] text-[var(--fb-ink)] outline-none transition-colors placeholder:text-[var(--fb-dim)] focus:border-[var(--fb-ink)]';
@@ -25,14 +25,14 @@ export function SectionHeader({
   return (
     <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 font-mono text-[9.5px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
-          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-magenta)]" />
+        <p className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-white/80 backdrop-blur-sm px-3.5 py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.16em] text-[var(--fb-ink)] shadow-sm">
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-lime)] ring-2 ring-[var(--fb-ink)]/20" />
           {eyebrow}
         </p>
         <h1 className="ffb-display ffb-caps mt-4 break-words text-[clamp(34px,5.4vw,60px)] leading-[0.86] tracking-[-0.035em]">
           {title}
         </h1>
-        <p className="mt-3 max-w-2xl text-[13.5px] leading-relaxed text-[var(--fb-muted)]">
+        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-[var(--fb-muted)]">
           {description}
         </p>
       </div>
@@ -97,17 +97,14 @@ export function StatTile({
   return (
     <div
       className={cn(
-        'flex flex-col justify-between rounded-[22px] border p-4 sm:p-5',
-        lime
-          ? 'border-transparent bg-[var(--fb-lime)] text-black'
-          : 'border-[var(--fb-line)] bg-[var(--fb-card)]',
+        'flex flex-col justify-between rounded-[24px] border border-[var(--fb-line)] bg-[var(--fb-card)] p-4 sm:p-5 shadow-[0_16px_40px_-16px_rgba(0,16,30,0.35)]',
         className,
       )}
     >
       <p
         className={cn(
           'font-mono text-[9px] font-semibold uppercase tracking-[0.14em]',
-          lime ? 'text-black/60' : 'text-[var(--fb-muted)]',
+          lime ? 'text-[var(--fb-lime)]' : 'text-[var(--fb-muted)]',
         )}
       >
         {label}
@@ -116,18 +113,13 @@ export function StatTile({
         <span
           className={cn(
             'ffb-display text-[40px] leading-none tabular-nums sm:text-[46px]',
-            !lime && 'text-[var(--fb-ink)]',
+            lime ? 'text-[var(--fb-lime)]' : 'text-[var(--fb-ink)]',
           )}
         >
           {value}
         </span>
         {hint && (
-          <span
-            className={cn(
-              'mb-1 text-[10px] font-medium',
-              lime ? 'text-black/55' : 'text-[var(--fb-muted)]',
-            )}
-          >
+          <span className="mb-1 text-[10px] font-medium text-[var(--fb-muted)]">
             {hint}
           </span>
         )}

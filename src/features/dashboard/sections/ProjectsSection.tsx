@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { FolderOpen, Search, SearchX, Sparkles, X } from 'lucide-react';
 import { ProjectCard } from '../ProjectCard';
+import { CreateProjectCard } from '../CreateProjectCard';
 import { Skeleton } from '@/components/ui/Skeleton';
 import type { Project } from '@/types';
 
@@ -141,15 +142,15 @@ export function ProjectsSection({
     <div>
       {/* ── Welcome ────────────────────────────────────────────────── */}
       <section className="min-w-0">
-        <p className="inline-flex items-center gap-2 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-[var(--fb-muted)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--fb-magenta)]" />
+        <p className="inline-flex items-center gap-2.5 rounded-full border border-[var(--fb-line)] bg-white/80 backdrop-blur-sm px-4 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--fb-ink)] shadow-sm">
+          <span className="size-2 rounded-full bg-[var(--fb-lime)] ring-2 ring-[var(--fb-ink)]/20" />
           {greeting()}
           {firstName ? `, ${firstName}` : ''}
         </p>
         <h1 className="ffb-display ffb-caps mt-4 break-words text-[clamp(40px,7vw,88px)] leading-[0.84] tracking-[-0.04em]">
           Your workbench
         </h1>
-        <p className="mt-3 max-w-xl text-[13.5px] leading-relaxed text-[var(--fb-muted)]">
+        <p className="mt-3 max-w-xl text-[14.5px] leading-relaxed text-[var(--fb-muted)]">
           Every app you have briefed, generated and previewed — source, builds and live preview in one place.
         </p>
       </section>
@@ -157,19 +158,20 @@ export function ProjectsSection({
       {/* ── Stats ──────────────────────────────────────────────────── */}
       {hasProjects && !loading && (
         <dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <div className="flex flex-col justify-between rounded-[24px] bg-[var(--fb-lime)] p-4 text-black sm:p-5">
-            <dt className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-black/60">
+          <div className="flex flex-col justify-between rounded-[24px] border border-[var(--fb-line)] bg-[var(--fb-card)] p-4 sm:p-5">
+            <dt className="flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-lime)]">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-lime)] ring-2 ring-[var(--fb-lime)]/30" />
               Projects
             </dt>
             <dd className="mt-6 flex items-end gap-2">
-              <span className="ffb-display text-[46px] leading-none sm:text-[54px]">{stats.total}</span>
-              <span className="mb-1.5 text-[10px] font-medium text-black/55">total</span>
+              <span className="ffb-display text-[46px] leading-none text-[var(--fb-lime)] sm:text-[54px]">{stats.total}</span>
+              <span className="mb-1.5 text-[10px] font-medium text-[var(--fb-muted)]">total</span>
             </dd>
           </div>
 
           <div className="flex flex-col justify-between rounded-[24px] border border-[var(--fb-line)] bg-[var(--fb-card)] p-4 sm:p-5">
             <dt className="flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-muted)]">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-magenta)]" />
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-lime)]" />
               Active · 7d
             </dt>
             <dd className="mt-6 flex items-end gap-2">
@@ -202,18 +204,18 @@ export function ProjectsSection({
 
       {/* ── Search + sort ──────────────────────────────────────────── */}
       <div
-        className="mt-6 flex scroll-mt-6 flex-col gap-2 rounded-[20px] border border-[var(--fb-line)] bg-[var(--fb-card)] p-2 transition-colors focus-within:border-[var(--fb-ink)] sm:flex-row sm:items-center"
+        className="mt-6 flex scroll-mt-6 flex-col gap-2 rounded-[28px] border border-[rgba(0,16,30,0.12)] bg-white/70 backdrop-blur-md p-2 transition-all focus-within:border-[var(--fb-ink)] focus-within:bg-white focus-within:shadow-[0_8px_30px_rgba(0,16,30,0.08)] sm:flex-row sm:items-center"
         ref={searchRef}
       >
         <div className="relative min-w-0 flex-1">
           <Search
             aria-hidden
-            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--fb-dim)]"
-            size={15}
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--fb-ink)]/60"
+            size={16}
           />
           <input
             aria-label="Search projects"
-            className="h-11 w-full rounded-full bg-transparent pl-10 pr-12 text-[13px] text-[var(--fb-ink)] outline-none placeholder:text-[var(--fb-dim)]"
+            className="h-11 w-full rounded-full bg-transparent pl-11 pr-12 text-[14px] text-[var(--fb-ink)] outline-none placeholder:text-[var(--fb-ink)]/40 font-medium"
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Escape') setSearch('');
@@ -225,25 +227,25 @@ export function ProjectsSection({
           {searching ? (
             <button
               aria-label="Clear search"
-              className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-[var(--fb-dim)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+              className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-[var(--fb-ink)]/60 transition-colors hover:bg-[var(--fb-ink)]/10 hover:text-[var(--fb-ink)]"
               onClick={() => setSearch('')}
               type="button"
             >
               <X size={14} />
             </button>
           ) : (
-            <kbd className="pointer-events-none absolute right-3.5 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--fb-line)] bg-[var(--fb-soft)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--fb-dim)] sm:block">
+            <kbd className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 rounded border border-[var(--fb-line)] bg-black/5 px-2 py-0.5 font-mono text-[9px] font-bold text-[var(--fb-ink)]/60 sm:block">
               /
             </kbd>
           )}
         </div>
 
-        <div className="flex items-center gap-2 sm:border-l sm:border-[var(--fb-line)] sm:pl-2">
+        <div className="flex items-center gap-2 sm:border-l sm:border-[var(--fb-line)] sm:pl-3">
           <label className="sr-only" htmlFor="project-sort">
             Sort projects
           </label>
           <select
-            className="h-11 w-full min-w-0 rounded-full border border-[var(--fb-line)] bg-[var(--fb-soft)] px-3.5 text-[11.5px] font-medium text-[var(--fb-ink)] outline-none transition-colors focus-visible:border-[var(--fb-ink)] sm:w-auto"
+            className="h-10 w-full min-w-0 rounded-full border border-[var(--fb-line)] bg-white/80 px-4 text-[11.5px] font-bold text-[var(--fb-ink)] uppercase tracking-wider outline-none transition-colors focus-visible:border-[var(--fb-ink)] sm:w-auto"
             id="project-sort"
             onChange={(event) => changeSort(event.target.value as SortBy)}
             value={sortBy}
@@ -309,6 +311,7 @@ export function ProjectsSection({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          {!searching && <CreateProjectCard onClick={onNewProject} />}
           {filtered.map((project, index) => (
             <ProjectCard index={index} key={project.id} project={project} />
           ))}

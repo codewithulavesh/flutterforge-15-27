@@ -2,6 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Lime Panchang';
+  src: url('/landing-v2/panchang-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Panchang';
+  src: url('/landing-v2/panchang-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Panchang';
+  src: url('/landing-v2/panchang-800.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Satoshi';
+  src: url('/landing-v2/satoshi-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Satoshi';
+  src: url('/landing-v2/satoshi-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     color-scheme: dark;
@@ -116,7 +148,9 @@
   }
 
   html {
-    overflow-x: hidden;
+    /* `clip` keeps horizontal overflow contained without creating a scroll
+       container, which would stop the sticky masthead from sticking. */
+    overflow-x: clip;
   }
 
   /* Lenis owns the scroll position on the landing page; native smooth
@@ -131,7 +165,7 @@
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    overflow-x: clip;
     transition: background-color 0.25s ease, color 0.25s ease;
   }
 
@@ -1493,29 +1527,298 @@
 }
 
 /* ── Dashboard app shell ─────────────────────────────────────────────────────
-   A neutral, framed workbench. The sidebar sits on the raised card tone while
-   the canvas uses the page tone, so the shell reads as a floating window like
-   the shadcn sidebar block instead of a full-bleed admin page. */
+   Lime & Agents Aesthetic: Lime canvas background, deep ink & metallic
+   boxes with crisp white & lime typography matching the landing page. */
 .ff-dash-shell {
-  --fb-bg: #fcfbf8;
-  --fb-card: #f4f2ed;
-  --fb-elevated: #ffffff;
-  --fb-line: rgba(5, 5, 5, 0.09);
-  --fb-soft: rgba(5, 5, 5, 0.05);
-  --fb-ink: #0a0a0a;
-  --fb-muted: #6b6b6b;
-  --fb-dim: #8a8a8a;
+  --lv-lime: #c5fa75;
+  --lv-ink: #00101e;
+  --lv-text: #2f4858;
+  --lv-white: #f8fff8;
+  --lv-metal: #748ea0;
+  --lv-display: 'Lime Panchang', sans-serif;
+  --lv-body: 'Lime Satoshi', sans-serif;
+
+  --fb-bg: #c5fa75;
+  --fb-card: #00101e;
+  --fb-elevated: #061928;
+  --fb-line: rgba(0, 16, 30, 0.12);
+  --fb-soft: rgba(0, 16, 30, 0.06);
+  --fb-ink: #00101e;
+  --fb-muted: #2f4858;
+  --fb-dim: #5c7788;
+  --fb-lime: #c5fa75;
+
+  font-family: var(--lv-body), sans-serif;
 }
 
 [data-theme='dark'] .ff-dash-shell {
-  --fb-bg: #0b0b0c;
-  --fb-card: #171719;
-  --fb-elevated: #202023;
-  --fb-line: rgba(255, 255, 255, 0.08);
-  --fb-soft: rgba(255, 255, 255, 0.055);
-  --fb-ink: #fafafa;
-  --fb-muted: #a1a1a6;
-  --fb-dim: #7c7c82;
+  --fb-bg: #00101e;
+  --fb-card: #051929;
+  --fb-elevated: #09243a;
+  --fb-line: rgba(248, 255, 248, 0.14);
+  --fb-soft: rgba(248, 255, 248, 0.07);
+  --fb-ink: #f8fff8;
+  --fb-muted: rgba(248, 255, 248, 0.72);
+  --fb-dim: #748ea0;
+  --fb-lime: #c5fa75;
+}
+
+/* Headings use Lime Panchang display typography with metallic text gradient */
+.ff-dash-shell .ffb-display {
+  font-family: 'Lime Panchang', sans-serif !important;
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+.ff-dash-shell h1.ffb-display,
+.ff-dash-shell .ff-dash-headline {
+  background: linear-gradient(119deg, #00101e 53%, #748ea0 70%, #2f4858 82%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-theme='dark'] .ff-dash-shell h1.ffb-display,
+[data-theme='dark'] .ff-dash-shell .ff-dash-headline {
+  background: linear-gradient(119deg, #f8fff8 53%, #c5fa75 75%, #748ea0 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Deep ink & metallic boxes matching image 2 */
+.ff-dash-shell article,
+.ff-dash-shell section.scroll-mt-6,
+.ff-dash-shell .ff-dash-panel {
+  background-color: #00101e !important;
+  background-image: linear-gradient(124deg, #00101e 8%, #1f3747 19%, #00101e 30%, #00101e 75%, #1f3747 88%, #00101e 100%) !important;
+  color: #f8fff8;
+  border-color: rgba(248, 255, 248, 0.14) !important;
+  border-radius: 24px;
+  box-shadow: 0 20px 48px -18px rgba(0, 16, 30, 0.4);
+}
+
+.ff-dash-shell dl > div {
+  background-color: #00101e !important;
+  background-image: linear-gradient(124deg, #00101e 8%, #1f3747 19%, #00101e 30%, #00101e 75%, #1f3747 88%, #00101e 100%) !important;
+  color: #f8fff8;
+  border: 1px solid rgba(248, 255, 248, 0.14) !important;
+  border-radius: 24px;
+  box-shadow: 0 16px 40px -16px rgba(0, 16, 30, 0.35);
+}
+
+/* Inside the dark metallic boxes, make sure text is crisp white and lime */
+.ff-dash-shell article .text-\[var\(--fb-ink\)\],
+.ff-dash-shell section.scroll-mt-6 .text-\[var\(--fb-ink\)\],
+.ff-dash-shell dl > div:not(.bg-\[var\(--fb-lime\)\]) .text-\[var\(--fb-ink\)\] {
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell article .text-\[var\(--fb-muted\)\],
+.ff-dash-shell section.scroll-mt-6 .text-\[var\(--fb-muted\)\],
+.ff-dash-shell dl > div:not(.bg-\[var\(--fb-lime\)\]) .text-\[var\(--fb-muted\)\] {
+  color: rgba(248, 255, 248, 0.72) !important;
+}
+
+.ff-dash-shell article .text-\[var\(--fb-dim\)\],
+.ff-dash-shell section.scroll-mt-6 .text-\[var\(--fb-dim\)\],
+.ff-dash-shell dl > div:not(.bg-\[var\(--fb-lime\)\]) .text-\[var\(--fb-dim\)\] {
+  color: rgba(248, 255, 248, 0.5) !important;
+}
+
+.ff-dash-shell article .border-\[var\(--fb-line\)\],
+.ff-dash-shell section.scroll-mt-6 .border-\[var\(--fb-line\)\] {
+  border-color: rgba(248, 255, 248, 0.12) !important;
+}
+
+/* Sidebar styling in deep ink metallic matching Image 2 */
+.ff-dash-shell aside[data-variant],
+.ff-dash-shell aside[role="dialog"] {
+  background-color: #00101e !important;
+  background-image: linear-gradient(124deg, #00101e 8%, #1f3747 19%, #00101e 30%, #00101e 75%, #1f3747 88%, #00101e 100%) !important;
+  border-right: 1px solid rgba(248, 255, 248, 0.14) !important;
+  box-shadow: 4px 0 24px -4px rgba(0, 16, 30, 0.35) !important;
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell aside .text-\[var\(--fb-ink\)\] {
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell aside .text-\[var\(--fb-muted\)\] {
+  color: rgba(248, 255, 248, 0.78) !important;
+}
+
+.ff-dash-shell aside .text-\[var\(--fb-dim\)\] {
+  color: #748ea0 !important;
+}
+
+.ff-dash-shell aside .border-\[var\(--fb-line\)\] {
+  border-color: rgba(248, 255, 248, 0.14) !important;
+}
+
+/* Sidebar Popovers in deep metallic card gradient */
+.ff-dash-shell .ff-dash-popover {
+  background-color: #00101e !important;
+  background-image: linear-gradient(124deg, #00101e 8%, #1f3747 19%, #00101e 30%, #00101e 75%, #1f3747 88%, #00101e 100%) !important;
+  border: 1px solid rgba(248, 255, 248, 0.14) !important;
+  box-shadow: 0 24px 64px -16px rgba(0, 16, 30, 0.8), 0 0 0 1px rgba(248, 255, 248, 0.08) !important;
+}
+
+/* Group section labels in metallic steel */
+.ff-dash-shell aside [data-sidebar="group-label"] {
+  font-family: 'Lime Satoshi', sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.16em !important;
+  color: #748ea0 !important;
+  padding: 1.25rem 0.65rem 0.4rem !important;
+}
+
+/* Sidebar menu buttons */
+.ff-dash-shell aside [data-sidebar="menu-button"],
+.ff-dash-shell aside button[data-size],
+.ff-dash-shell aside a[data-size] {
+  border-radius: 12px !important;
+  border: 1px solid transparent !important;
+  transition: all 0.18s ease-in-out !important;
+  color: rgba(248, 255, 248, 0.82) !important;
+  font-weight: 500 !important;
+}
+
+.ff-dash-shell aside [data-sidebar="menu-button"] svg,
+.ff-dash-shell aside button[data-size] svg,
+.ff-dash-shell aside a[data-size] svg {
+  color: #748ea0;
+  transition: color 0.18s ease-in-out;
+}
+
+.ff-dash-shell aside [data-sidebar="menu-button"]:hover,
+.ff-dash-shell aside button[data-size]:hover,
+.ff-dash-shell aside a[data-size]:hover {
+  background-color: rgba(248, 255, 248, 0.08) !important;
+  border-color: rgba(248, 255, 248, 0.14) !important;
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell aside [data-sidebar="menu-button"]:hover svg,
+.ff-dash-shell aside button[data-size]:hover svg,
+.ff-dash-shell aside a[data-size]:hover svg {
+  color: #c5fa75 !important;
+}
+
+/* Active sidebar item: high-contrast dark metallic card with lime indicator & glow */
+.ff-dash-shell aside [data-active="true"],
+.ff-dash-shell aside [aria-current="page"] {
+  background-color: rgba(197, 250, 117, 0.12) !important;
+  border: 1px solid rgba(197, 250, 117, 0.42) !important;
+  color: #f8fff8 !important;
+  font-weight: 700 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 0 16px -2px rgba(197, 250, 117, 0.18) !important;
+}
+
+.ff-dash-shell aside [data-active="true"] span,
+.ff-dash-shell aside [aria-current="page"] span {
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell aside [data-active="true"] svg,
+.ff-dash-shell aside [aria-current="page"] svg {
+  color: #c5fa75 !important;
+}
+
+/* Pill badges inside sidebar items */
+.ff-dash-shell aside [data-sidebar="menu-badge"] {
+  background: rgba(248, 255, 248, 0.06);
+  border: 1px solid rgba(248, 255, 248, 0.14);
+  color: rgba(248, 255, 248, 0.75);
+  border-radius: 9999px;
+  padding: 2.5px 7.5px;
+  font-family: 'Lime Satoshi', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ff-dash-shell aside [data-active="true"] [data-sidebar="menu-badge"],
+.ff-dash-shell aside [aria-current="page"] [data-sidebar="menu-badge"] {
+  background: rgba(197, 250, 117, 0.22) !important;
+  border: 1px solid rgba(197, 250, 117, 0.5) !important;
+  color: #c5fa75 !important;
+  font-weight: 700 !important;
+}
+
+/* Submenu styling */
+.ff-dash-shell aside [data-sidebar="menu-sub"] {
+  border-left: 1px solid rgba(248, 255, 248, 0.14) !important;
+}
+
+.ff-dash-shell aside [data-sidebar="menu-sub-item"] a,
+.ff-dash-shell aside [data-sidebar="menu-sub-item"] button {
+  border-radius: 10px !important;
+  border: 1px solid transparent !important;
+  color: rgba(248, 255, 248, 0.68) !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+.ff-dash-shell aside [data-sidebar="menu-sub-item"] a:hover,
+.ff-dash-shell aside [data-sidebar="menu-sub-item"] button:hover {
+  background-color: rgba(248, 255, 248, 0.08) !important;
+  border-color: rgba(248, 255, 248, 0.12) !important;
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell aside [data-sidebar="menu-sub-item"] [aria-current="page"],
+.ff-dash-shell aside [data-sidebar="menu-sub-item"] a[aria-current="page"] {
+  background-color: rgba(197, 250, 117, 0.14) !important;
+  border-color: rgba(197, 250, 117, 0.45) !important;
+  color: #c5fa75 !important;
+  font-weight: 700 !important;
+}
+
+/* Sidebar Trigger toggle button */
+.ff-dash-shell [data-sidebar="trigger"] {
+  border: 1px solid rgba(0, 16, 30, 0.15) !important;
+  background-color: rgba(255, 255, 255, 0.6) !important;
+  color: #00101e !important;
+  border-radius: 10px !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+.ff-dash-shell [data-sidebar="trigger"]:hover {
+  background-color: #00101e !important;
+  color: #c5fa75 !important;
+  border-color: #00101e !important;
+}
+
+/* Search bar and selects inside dashboard */
+.ff-dash-shell input[aria-label="Search projects"] {
+  background-color: transparent !important;
+  color: #00101e;
+}
+
+[data-theme='dark'] .ff-dash-shell input[aria-label="Search projects"] {
+  color: #f8fff8 !important;
+}
+
+/* Inputs & selects inside dark panels */
+.ff-dash-shell section.scroll-mt-6 input,
+.ff-dash-shell section.scroll-mt-6 select,
+.ff-dash-shell section.scroll-mt-6 textarea {
+  background-color: rgba(248, 255, 248, 0.07) !important;
+  border-color: rgba(248, 255, 248, 0.18) !important;
+  color: #f8fff8 !important;
+}
+
+.ff-dash-shell section.scroll-mt-6 input:focus,
+.ff-dash-shell section.scroll-mt-6 select:focus,
+.ff-dash-shell section.scroll-mt-6 textarea:focus {
+  border-color: #c5fa75 !important;
+  box-shadow: 0 0 0 2px rgba(197, 250, 117, 0.25) !important;
+  outline: none !important;
 }
 
 /* The studio theme remaps `.text-white` to dark ink in light mode. Inside
@@ -1658,6 +1961,45 @@
     linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
 }
 
+/* Dedicated dark blueprint studio grid for preview workspace */
+.ffb-workspace-grid-dark {
+  background-image:
+    linear-gradient(to right, rgba(248, 255, 248, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(248, 255, 248, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ── Workspace Studio Palette ────────────────────────────────────────────────
+   Dedicated dark metallic IDE canvas for Workspace, AI Builder & Preview.
+   Guarantees deep ink panels, crisp white typography, and glowing lime accents
+   regardless of whether the global marketing theme is light or dark. */
+.ff-workspace-studio {
+  --fb-bg: #000d18;
+  --fb-card: #001424;
+  --fb-elevated: #0c2032;
+  --fb-line: rgba(248, 255, 248, 0.10);
+  --fb-soft: rgba(248, 255, 248, 0.05);
+  --fb-ink: #f8fff8;
+  --fb-muted: rgba(248, 255, 248, 0.72);
+  --fb-dim: #748ea0;
+  --fb-lime: #c5fa75;
+  --fb-danger: #ff8a8a;
+
+  --ff-bg: #000d18;
+  --ff-surface: #001424;
+  --ff-surface-2: #0c2032;
+  --ff-border: rgba(248, 255, 248, 0.10);
+  --ff-border-hover: rgba(248, 255, 248, 0.20);
+  --ff-text: #f8fff8;
+  --ff-text-muted: rgba(248, 255, 248, 0.72);
+  --ff-text-dim: #748ea0;
+  --ff-primary: #c5fa75;
+
+  background-color: #000d18;
+  color: #f8fff8;
+  color-scheme: dark;
+}
+
 /* Helvetica Now Condensed substitute: Archivo variable width at 900. */
 .ffb-display {
   font-family: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -1728,6 +2070,63 @@
 .ffb-reveal.is-visible {
   opacity: 1;
   transform: none;
+}
+
+/* ── Fluid scroll: progress rail and velocity marquee ─────────────────────── */
+.ffb-marquee {
+  overflow: hidden;
+}
+.ffb-marquee-window {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+.ffb-marquee-tilt {
+  will-change: transform;
+}
+.ffb-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: ffb-marquee 42s linear infinite;
+}
+.ffb-marquee:hover .ffb-marquee-track {
+  animation-play-state: paused;
+}
+.ffb-marquee-group {
+  display: flex;
+  align-items: center;
+}
+.ffb-marquee-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding-right: 0.9rem;
+  white-space: nowrap;
+  font-family: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: clamp(17px, 2.4vw, 28px);
+  font-weight: 900;
+  font-stretch: 75%;
+  font-variation-settings: 'wdth' 75;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.ffb-marquee-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #050505;
+}
+@keyframes ffb-marquee {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ffb-marquee-track {
+    animation: none;
+  }
 }
 
 .ffb-faq summary {

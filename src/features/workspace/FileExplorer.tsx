@@ -254,7 +254,7 @@ export function FileExplorer() {
         <div key={node.path} role="none">
           <button
             aria-expanded={isExpanded}
-            className="group flex w-full items-center gap-1.5 rounded-md py-2 pr-2 text-left text-[13px] transition-colors hover:bg-[var(--ff-surface-2)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ff-primary)]/60 sm:py-1 sm:text-xs"
+            className="group flex w-full items-center gap-1.5 rounded-md py-2 pr-2 text-left text-[13px] transition-colors hover:bg-[rgba(248,255,248,0.05)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgba(197,250,117,0.40)] sm:py-1 sm:text-xs"
             onClick={() => toggleExpand(node.path)}
             role="treeitem"
             style={indent}
@@ -266,7 +266,7 @@ export function FileExplorer() {
             {isExpanded
               ? <FolderOpen size={14} className="shrink-0 text-amber-400" />
               : <Folder size={14} className="shrink-0 text-amber-400" />}
-            <span className="truncate text-[var(--ff-text-muted)] group-hover:text-[var(--ff-text)]">{node.name}</span>
+            <span className="truncate text-[#748ea0] group-hover:text-[#f8fff8]">{node.name}</span>
           </button>
           {isExpanded && (
             <div role="group">
@@ -283,7 +283,7 @@ export function FileExplorer() {
       <div
         className={cn(
           'group relative flex items-center rounded-md transition-colors',
-          isActive ? 'bg-[var(--ff-primary)]/10' : 'hover:bg-[var(--ff-surface-2)]',
+          isActive ? 'bg-[rgba(197,250,117,0.10)]' : 'hover:bg-[rgba(248,255,248,0.05)]',
           busyPath === node.path && 'opacity-50',
         )}
         data-path={node.path}
@@ -297,7 +297,7 @@ export function FileExplorer() {
       >
         <button
           aria-current={isActive ? 'true' : undefined}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-2 pr-1 text-left text-[13px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ff-primary)]/60 sm:py-1 sm:text-xs"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-2 pr-1 text-left text-[13px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[rgba(197,250,117,0.40)] sm:py-1 sm:text-xs"
           onClick={() => openFile(node.path)}
           role="treeitem"
           style={{ paddingLeft: `${depth * 14 + 6 + 14}px` }}
@@ -309,8 +309,8 @@ export function FileExplorer() {
             className={cn(
               'truncate',
               isActive
-                ? 'font-medium text-[var(--ff-primary)]'
-                : 'text-[var(--ff-text-muted)] group-hover:text-[var(--ff-text)]',
+                ? 'font-medium text-[#c5fa75]'
+                : 'text-[#748ea0] group-hover:text-[#f8fff8]',
             )}
           >
             {node.name}
@@ -322,7 +322,7 @@ export function FileExplorer() {
           aria-haspopup="menu"
           aria-label={`Actions for ${node.name}`}
           className={cn(
-            'mr-1 shrink-0 rounded-md p-1.5 text-[var(--ff-text-dim)] transition-opacity hover:bg-[var(--ff-surface)] hover:text-[var(--ff-text)] focus-visible:opacity-100',
+            'mr-1 shrink-0 rounded-md p-1.5 text-[#748ea0] transition-opacity hover:bg-[rgba(248,255,248,0.07)] hover:text-[#f8fff8] focus-visible:opacity-100',
             menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
           )}
           onClick={(e) => {
@@ -342,13 +342,13 @@ export function FileExplorer() {
   const hasFiles = fileCount > 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--ff-surface)]">
+    <div className="flex h-full min-h-0 flex-col bg-[#00101e]">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--ff-border)] px-3 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[rgba(248,255,248,0.10)] bg-[rgba(248,255,248,0.03)] px-3 py-2">
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ff-text-dim)]">Files</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#748ea0]">Files</div>
           <div className="mt-1 flex items-center gap-1.5 text-[10px] text-[var(--ff-text-muted)]">
-            <span className="rounded-full bg-[var(--ff-surface-2)] px-1.5 py-0.5 font-mono tabular-nums">{fileCount}</span>
+            <span className="rounded-full bg-[rgba(248,255,248,0.07)] border border-[rgba(248,255,248,0.10)] px-1.5 py-0.5 font-mono tabular-nums text-[#748ea0]">{fileCount}</span>
             <span>{fileCount === 1 ? 'file' : 'files'}</span>
           </div>
         </div>

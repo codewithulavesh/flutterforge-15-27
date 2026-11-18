@@ -44,7 +44,7 @@ export function ProfileAvatar({
     <span
       aria-hidden
       className={cn(
-        'grid shrink-0 place-items-center rounded-full border border-[var(--fb-line)] bg-[var(--fb-soft)] font-mono font-semibold text-[var(--fb-ink)]',
+        'grid shrink-0 place-items-center rounded-full border border-[rgba(197,250,117,0.35)] bg-[rgba(197,250,117,0.12)] font-mono font-bold text-[var(--fb-lime)]',
         dimension,
         className,
       )}

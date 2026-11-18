@@ -133,4 +133,24 @@ describe('artifact gate', () => {
     expect(gate.passed).toBe(false);
     expect(gate.blockers.join('\n')).toMatch(/ghost_screen/);
   });
+
+  it('fails on unresolved relative imports', () => {
+    const files = [
+      ...clean(),
+      { path: 'lib/app/app.dart', content: 'import \'../features/home/screens/home_screen.dart\';\n\nclass App {}' },
+    ];
+    const gate = validateProjectFiles(files).gate;
+    expect(gate.passed).toBe(false);
+    expect(gate.blockers.join('\n')).toMatch(/home_screen\.dart/);
+  });
+
+  it('does not repeat the same blocker', () => {
+    const files = [
+      ...clean(),
+      { path: 'lib/a.dart', content: 'import \'ghost.dart\';\nimport \'ghost.dart\';\nclass A {}' },
+    ];
+    const gate = validateProjectFiles(files).gate;
+    expect(gate.blockers.length).toBe(new Set(gate.blockers).size);
+    expect(gate.blockers.join('\n')).toMatch(/ghost\.dart/);
+  });
 });

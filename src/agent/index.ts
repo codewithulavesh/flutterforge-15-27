@@ -7,6 +7,8 @@ import { runEditAgent } from '../agents/editAgent';
 
 export * from './types';
 export * from './skills';
+export * from './chatTypes';
+export * from './chatHistory';
 export * from './chatIntent';
 export * from './chatContext';
 export * from './chatAnswer';

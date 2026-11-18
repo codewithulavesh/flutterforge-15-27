@@ -60,7 +60,7 @@ const RELEASES_URL = `${REPO_URL}/releases`;
 
 function MenuIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-[var(--fb-line)] bg-[var(--fb-soft)] text-[var(--fb-muted)]">
+    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[rgba(248,255,248,0.12)] bg-white/5 text-[rgba(248,255,248,0.8)]">
       {children}
     </span>
   );
@@ -212,8 +212,8 @@ export function DashboardSidebar({
             aria-haspopup="menu"
             aria-label={collapsed ? 'Switch workspace' : undefined}
             className={cn(
-              'flex h-14 w-full items-center gap-3 rounded-xl px-2 text-left outline-none transition-colors hover:bg-[var(--fb-soft)] focus-visible:ring-2 focus-visible:ring-[var(--fb-ink)]/20',
-              workspaceOpen && 'bg-[var(--fb-soft)]',
+              'flex h-14 w-full items-center gap-3 rounded-2xl px-2.5 text-left outline-none transition-all hover:bg-white/10 border border-transparent hover:border-[rgba(248,255,248,0.1)] focus-visible:ring-2 focus-visible:ring-[var(--fb-lime)]/30',
+              workspaceOpen && 'bg-white/10 border-[rgba(248,255,248,0.15)]',
               collapsed && 'justify-center px-0',
               isMobile && 'pr-9',
             )}
@@ -223,17 +223,20 @@ export function DashboardSidebar({
             }}
             type="button"
           >
-            <BrandLogo className="rounded-[10px] border border-[var(--fb-line)]" size={36} />
+            <BrandLogo className="rounded-[10px] border border-[rgba(248,255,248,0.15)]" size={36} />
             {!collapsed && (
               <>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14.5px] font-semibold leading-tight text-[var(--fb-ink)]">
+                  <span className="block truncate text-[14.5px] ffb-display font-bold leading-tight text-[#f8fff8] tracking-[-0.03em]">
                     FlutterForge
                   </span>
-                  <span className="mt-0.5 block truncate text-[12px] text-[var(--fb-dim)]">{planName}</span>
+                  <span className="mt-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-lime)]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--fb-lime)] ring-2 ring-[var(--fb-lime)]/30" />
+                    {planName}
+                  </span>
                 </span>
                 {!isMobile && (
-                  <ChevronsUpDown aria-hidden className="shrink-0 text-[var(--fb-dim)]" size={14} />
+                  <ChevronsUpDown aria-hidden className="shrink-0 text-[rgba(248,255,248,0.45)]" size={14} />
                 )}
               </>
             )}
@@ -241,12 +244,12 @@ export function DashboardSidebar({
 
           {workspaceOpen && (
             <div
-              className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(21rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border border-[var(--fb-line)] bg-[var(--fb-elevated)] p-1.5 shadow-[0_28px_80px_-22px_rgba(0,0,0,0.6)] animate-in fade-in-0 zoom-in-95"
+              className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(21rem,calc(100vw-2.5rem))] overflow-hidden rounded-[22px] border border-[rgba(248,255,248,0.16)] bg-[#00101e] p-2 shadow-[0_32px_90px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 ff-dash-popover"
               role="menu"
             >
-              <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-[var(--fb-dim)]">Workspaces</p>
+              <p className="px-2.5 pb-1 pt-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--fb-lime)]">Workspaces</p>
               <button
-                className="flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left transition-colors hover:bg-[var(--fb-soft)]"
+                className="flex h-12 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors hover:bg-white/10"
                 onClick={() => {
                   closeMenus();
                   navigate('/dashboard');
@@ -255,28 +258,28 @@ export function DashboardSidebar({
                 type="button"
               >
                 <MenuIcon>
-                  <BrandLogo className="rounded-[5px]" size={18} />
+                  <BrandLogo className="rounded-[6px]" size={18} />
                 </MenuIcon>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-medium text-[var(--fb-ink)]">
+                  <span className="block truncate text-[13.5px] font-medium text-[#f8fff8]">
                     FlutterForge
                   </span>
-                  <span className="block truncate text-[11.5px] text-[var(--fb-dim)]">
+                  <span className="block truncate text-[11.5px] text-[rgba(248,255,248,0.55)]">
                     Personal workspace
                   </span>
                 </span>
-                <Check aria-hidden className="text-[var(--fb-ink)]" size={15} />
+                <Check aria-hidden className="text-[var(--fb-lime)]" size={15} />
               </button>
 
               {recentProjects.length > 0 && (
                 <>
-                  <div className="my-1 h-px bg-[var(--fb-line)]" />
-                  <p className="px-2.5 pb-1 pt-0.5 text-[11px] font-medium text-[var(--fb-dim)]">
+                  <div className="my-1.5 h-px bg-[rgba(248,255,248,0.1)]" />
+                  <p className="px-2.5 pb-1 pt-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-[rgba(248,255,248,0.45)]">
                     Recent projects
                   </p>
                   {recentProjects.map((project) => (
                     <button
-                      className="flex h-11 w-full items-center gap-3 rounded-lg px-2 text-left transition-colors hover:bg-[var(--fb-soft)]"
+                      className="flex h-11 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors hover:bg-white/10"
                       key={project.id}
                       onClick={() => openProject(project.id)}
                       role="menuitem"
@@ -285,26 +288,26 @@ export function DashboardSidebar({
                       <MenuIcon>
                         <FolderKanban aria-hidden size={16} />
                       </MenuIcon>
-                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-[var(--fb-ink)]">
+                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-[#f8fff8]">
                         {project.name}
                       </span>
-                      <ArrowUpRight aria-hidden className="text-[var(--fb-dim)]" size={14} />
+                      <ArrowUpRight aria-hidden className="text-[rgba(248,255,248,0.4)]" size={14} />
                     </button>
                   ))}
                 </>
               )}
 
-              <div className="my-1 h-px bg-[var(--fb-line)]" />
+              <div className="my-1.5 h-px bg-[rgba(248,255,248,0.1)]" />
               <button
-                className="flex h-11 w-full items-center gap-3 rounded-lg px-2 text-left transition-colors hover:bg-[var(--fb-soft)]"
+                className="flex h-11 w-full items-center gap-3 rounded-xl px-2.5 text-left text-[var(--fb-lime)] transition-colors hover:bg-[var(--fb-lime)]/10"
                 onClick={openNewProject}
                 role="menuitem"
                 type="button"
               >
                 <MenuIcon>
-                  <Plus aria-hidden size={16} />
+                  <Plus aria-hidden size={16} className="text-[var(--fb-lime)]" />
                 </MenuIcon>
-                <span className="text-[13.5px] font-medium text-[var(--fb-muted)]">New app</span>
+                <span className="text-[13.5px] font-semibold text-[var(--fb-lime)]">New app</span>
               </button>
             </div>
           )}
@@ -576,8 +579,8 @@ export function DashboardSidebar({
             aria-haspopup="menu"
             aria-label={collapsed ? 'Account menu' : undefined}
             className={cn(
-              'flex h-14 w-full items-center gap-3 rounded-xl px-2 text-left outline-none transition-colors hover:bg-[var(--fb-soft)] focus-visible:ring-2 focus-visible:ring-[var(--fb-ink)]/20',
-              userOpen && 'bg-[var(--fb-soft)]',
+              'flex h-14 w-full items-center gap-3 rounded-2xl px-2.5 text-left outline-none transition-all hover:bg-white/10 border border-transparent hover:border-[rgba(248,255,248,0.1)] focus-visible:ring-2 focus-visible:ring-[var(--fb-lime)]/30',
+              userOpen && 'bg-white/10 border-[rgba(248,255,248,0.15)]',
               collapsed && 'justify-center px-0',
             )}
             onClick={() => {
@@ -590,57 +593,57 @@ export function DashboardSidebar({
             {!collapsed && (
               <>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-semibold leading-tight text-[var(--fb-ink)]">
+                  <span className="block truncate text-[13.5px] font-semibold leading-tight text-[#f8fff8]">
                     {displayName}
                   </span>
-                  <span className="mt-0.5 block truncate text-[11.5px] text-[var(--fb-dim)]">
+                  <span className="mt-0.5 block truncate text-[11.5px] text-[rgba(248,255,248,0.55)]">
                     {displayEmail}
                   </span>
                 </span>
-                <ChevronsUpDown aria-hidden className="shrink-0 text-[var(--fb-dim)]" size={14} />
+                <ChevronsUpDown aria-hidden className="shrink-0 text-[rgba(248,255,248,0.45)]" size={14} />
               </>
             )}
           </button>
 
           {userOpen && (
             <div
-              className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-[min(21rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border border-[var(--fb-line)] bg-[var(--fb-elevated)] shadow-[0_28px_80px_-22px_rgba(0,0,0,0.6)] animate-in fade-in-0 zoom-in-95"
+              className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-[min(21rem,calc(100vw-2.5rem))] overflow-hidden rounded-[22px] border border-[rgba(248,255,248,0.16)] bg-[#00101e] shadow-[0_32px_90px_-20px_rgba(0,0,0,0.85)] backdrop-blur-xl animate-in fade-in-0 zoom-in-95 ff-dash-popover"
               role="menu"
             >
-              <div className="flex items-center gap-3 px-3 py-3">
+              <div className="flex items-center gap-3 px-3.5 py-3.5">
                 <ProfileAvatar name={displayName} size="lg" url={profile?.avatar_url} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13.5px] font-semibold text-[var(--fb-ink)]">{displayName}</p>
-                  <p className="truncate text-[11.5px] text-[var(--fb-dim)]">{displayEmail}</p>
+                  <p className="truncate text-[13.5px] font-semibold text-[#f8fff8]">{displayName}</p>
+                  <p className="truncate text-[11.5px] text-[rgba(248,255,248,0.55)]">{displayEmail}</p>
                 </div>
               </div>
               {typeof credits === 'number' && (
-                <p className="px-3 pb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--fb-dim)]">
+                <p className="px-3.5 pb-2.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--fb-lime)]">
                   {credits.toLocaleString()} credits · {planName}
                 </p>
               )}
-              <div className="h-px bg-[var(--fb-line)]" />
+              <div className="h-px bg-[rgba(248,255,248,0.1)]" />
               <div className="p-1.5">
                 <Link
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium text-[rgba(248,255,248,0.8)] transition-all hover:bg-white/10 hover:text-[#f8fff8]"
                   onClick={closeMenus}
                   role="menuitem"
                   to="/dashboard/profile"
                 >
-                  <UserRound aria-hidden size={16} />
+                  <UserRound aria-hidden size={16} className="text-[var(--fb-lime)]" />
                   Edit profile
                 </Link>
                 <Link
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium text-[rgba(248,255,248,0.8)] transition-all hover:bg-white/10 hover:text-[#f8fff8]"
                   onClick={closeMenus}
                   role="menuitem"
                   to="/dashboard/usage"
                 >
-                  <Gauge aria-hidden size={16} />
+                  <Gauge aria-hidden size={16} className="text-[var(--fb-lime)]" />
                   Usage &amp; credits
                 </Link>
                 <Link
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium text-[var(--fb-lime)] transition-all hover:bg-[var(--fb-lime)]/10"
                   onClick={closeMenus}
                   role="menuitem"
                   to="/dashboard/billing"
@@ -649,7 +652,7 @@ export function DashboardSidebar({
                   {planAction}
                 </Link>
                 <Link
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium text-[rgba(248,255,248,0.8)] transition-all hover:bg-white/10 hover:text-[#f8fff8]"
                   onClick={closeMenus}
                   role="menuitem"
                   to="/dashboard/billing"
@@ -658,7 +661,7 @@ export function DashboardSidebar({
                   Plan &amp; billing
                 </Link>
                 <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[rgba(248,255,248,0.8)] transition-all hover:bg-white/10 hover:text-[#f8fff8]"
                   onClick={toggle}
                   role="menuitem"
                   type="button"
@@ -667,7 +670,7 @@ export function DashboardSidebar({
                   {isDark ? 'Light mode' : 'Dark mode'}
                 </button>
                 <Link
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-[13px] font-medium text-[rgba(248,255,248,0.8)] transition-all hover:bg-white/10 hover:text-[#f8fff8]"
                   onClick={closeMenus}
                   role="menuitem"
                   to="/dashboard/shortcuts"
@@ -676,10 +679,10 @@ export function DashboardSidebar({
                   Keyboard shortcuts
                 </Link>
               </div>
-              <div className="h-px bg-[var(--fb-line)]" />
+              <div className="h-px bg-[rgba(248,255,248,0.1)]" />
               <div className="p-1.5">
                 <button
-                  className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-[var(--fb-muted)] transition-colors hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]"
+                  className="flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[rgba(248,255,248,0.8)] transition-all hover:bg-rose-500/15 hover:text-rose-300"
                   onClick={() => {
                     setUserOpen(false);
                     void signOut();

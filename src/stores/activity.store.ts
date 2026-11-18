@@ -129,6 +129,7 @@ interface ActivityState {
   ) => void;
   ingestFile: (file: SSEFileReadyEvent) => void;
   ingestProgress: (message: string) => void;
+  ingestChatEvent: (event: import('@/agent/chatTypes').ChatEvent) => void;
   ingestBuildLog: (line: string) => void;
   ingestBuildStatus: (status: string, message: string, errors?: string[]) => void;
   end: (status: Exclude<ActivityStatus, 'running'>, summary?: string) => void;
@@ -502,6 +503,122 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       }
 
       return { run, events, files, buildErrors };
+    });
+    persist(get());
+  },
+
+  ingestChatEvent: (event) => {
+    const at = Date.now();
+    set((state) => {
+      let events = state.events;
+      const add = (activity: ActivityEvent) => {
+        events = pushEvent(events, activity);
+      };
+
+      switch (event.type) {
+        case 'agent.thinking': {
+          const thought = (event.detail || 'Thinking…').trim();
+          const last = lastOfKind(events, 'reasoning');
+          if (!last || last.text !== thought) {
+            add({ kind: 'reasoning', id: newId(), at, text: thought });
+          }
+          break;
+        }
+        case 'tool.started': {
+          add({
+            kind: 'tool',
+            id: newId(),
+            at,
+            tool: event.tool,
+            title: `Tool: ${event.tool}`,
+            detail: event.operationId,
+            status: 'running',
+            input: event.input,
+            toolCallId: event.operationId,
+          });
+          break;
+        }
+        case 'tool.completed': {
+          const index = [...events].reverse().findIndex(
+            (candidate) => candidate.kind === 'tool' && candidate.toolCallId === event.operationId,
+          );
+          if (index >= 0) {
+            const realIndex = events.length - 1 - index;
+            const tool = events[realIndex] as ToolActivity;
+            const next = [...events];
+            next[realIndex] = {
+              ...tool,
+              status: 'done',
+              output: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
+            };
+            events = next;
+          }
+          break;
+        }
+        case 'tool.failed': {
+          const index = [...events].reverse().findIndex(
+            (candidate) => candidate.kind === 'tool' && candidate.toolCallId === event.operationId,
+          );
+          if (index >= 0) {
+            const realIndex = events.length - 1 - index;
+            const tool = events[realIndex] as ToolActivity;
+            const next = [...events];
+            next[realIndex] = {
+              ...tool,
+              status: 'error',
+              output: event.error,
+            };
+            events = next;
+          }
+          break;
+        }
+        case 'validation.completed': {
+          add({
+            kind: 'validation',
+            id: newId(),
+            at,
+            report: (event.result as ValidationReport) || {
+              isValid: true,
+              totalIssues: 0,
+              criticalErrors: 0,
+              warnings: 0,
+              summary: 'Validation complete',
+              analysis: [],
+            },
+          });
+          break;
+        }
+        case 'message.completed': {
+          add({
+            kind: 'checkpoint',
+            id: newId(),
+            at,
+            label: 'Response completed',
+          });
+          break;
+        }
+        case 'message.failed': {
+          const errMsg = typeof event.error === 'string' ? event.error : event.error?.message || 'Chat message failed';
+          add({
+            kind: 'error',
+            id: newId(),
+            at,
+            message: errMsg,
+          });
+          break;
+        }
+        case 'run.cancelled': {
+          add({
+            kind: 'checkpoint',
+            id: newId(),
+            at,
+            label: 'Run cancelled by user',
+          });
+          break;
+        }
+      }
+
+      return { events };
     });
     persist(get());
   },

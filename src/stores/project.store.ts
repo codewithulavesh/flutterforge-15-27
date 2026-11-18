@@ -5,19 +5,20 @@ import { useAuthStore } from './auth.store';
 import { generateFlutterProjectFiles, generateMinimalStarterFiles } from '@/utils/flutterTemplates';
 import { applyAppIdToPubspec, generateUniqueAppId } from '@/utils/appId';
 import { detectSupabaseNeed, isExplicitLocalOnly } from '@/utils/backendNeed';
-import { classifyChatIntent } from '@/agent/chatIntent';
-import { answerGeneralQuestion } from '@/agent/chatAnswer';
+import { classifyChatIntent, detectChatIntent, detectIntentHeuristic, BUILDER_INTENTS, PROJECT_AWARE_INTENTS } from '@/agent/chatIntent';
+import { answerGeneralQuestion, executeChatTurn } from '@/agent/chatAnswer';
 import { ChatContextHandler } from '@/agent/chatContext';
+import { type ChatEvent, type ChatErrorDetails, ChatError } from '@/agent/chatTypes';
 import { AgentContextBuilder, AgentPlanner, FlutterSupabaseAgent, MultiFileCodeGenerator, keyPool, SkillRegistry } from '@/agent';
 import { validateProjectFiles, type PreWriteValidation } from '@/agent/preWriteValidator';
 import type { SSEFileReadyEvent } from '@/agent/streamEvents';
-import { usePreviewStore, registerBuildFailedHandler } from './preview.store';
+import { usePreviewStore, registerBuildFailedHandler, type ProjectVerification } from './preview.store';
 import { useWorkspaceStore } from './workspace.store';
 import { useTerminalStore } from './terminal.store';
 import { useActivityStore } from './activity.store';
 import { useCredentialsStore } from './credentials.store';
 import { ECONOMY_MODEL, FRONTIER_MODEL, resolveModelChoice, type ModelPreference } from '@/agent/modelRouting';
-import type { AgentGenerationResult } from '@/agent/types';
+import type { AgentFileArtifact, AgentGenerationResult, AgentPlan, ValidationReport } from '@/agent/types';
 import { snapshotHash } from '@/utils/versionDiff';
 
 /** One in-flight promise per key — collapsing concurrent duplicate calls
@@ -63,9 +64,9 @@ export interface SendMessageOptions {
     stepNumber?: number;
     totalSteps?: number;
     thought?: string;
-    plan?: any;
-    validationReport?: any;
-    generatedFiles?: any[];
+    plan?: AgentPlan;
+    validationReport?: ValidationReport;
+    generatedFiles?: AgentFileArtifact[];
     detail?: string;
     kind?: string;
     tool?: string;
@@ -91,6 +92,8 @@ export interface SendMessageOptions {
   isEdit?: boolean;
   /** Current project files passed as context for edit mode. */
   existingFiles?: Array<{ path: string; content: string | null }>;
+  /** Real-time structured runtime event sink. */
+  onChatEvent?: (event: ChatEvent) => void;
 }
 
 export interface SendMessageResult {
@@ -102,6 +105,8 @@ export interface SendMessageResult {
   /** False when files were written but the authoritative gates failed. */
   verified?: boolean;
   verification?: import('@/agent/types').AgentGenerationResult['verification'];
+  intent?: import('@/agent/chatTypes').AssistantIntent;
+  error?: ChatErrorDetails;
 }
 
 interface ProjectState {
@@ -513,10 +518,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return { mode: 'duplicate' as const };
     }
     inFlightSends.add(conv.id);
+    activeSendProjects.add(projectId);
     set({ generatingIn: projectId });
     return runBody().finally(() => {
       inFlightSends.delete(conv.id);
+      activeSendProjects.delete(projectId);
       set({ generatingIn: null });
+      // Repairs requested during the run must execute only after this lock is
+      // released, otherwise sendMessage returns `duplicate` and the repair is
+      // silently lost while the UI reports success.
+      setTimeout(() => { void flushQueuedRepair(projectId); }, 0);
     });
 
     // Original send flow, unchanged — nested so it keeps closure access to
@@ -565,13 +576,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         throw new Error('Project is still loading. Please try again in a moment.');
       }
 
-      // General questions ("what is Supabase?", "thanks", "how do I...?") are
-      // answered conversationally: no files change, no version checkpoint, no
-      // preview rebuild. Wizard prompts and build-repair passes always build.
       const forceBuild = opts?.isInitialGeneration === true || opts?.isRepair === true;
-      if (!forceBuild && classifyChatIntent(content) === 'chat') {
+      const previewSession = usePreviewStore.getState().getSession(projectId);
+      const intentDecision = forceBuild
+        ? { intent: 'feature' as const, confidence: 1.0, reason: 'Forced build generation', source: 'structural' as const }
+        : await detectChatIntent(content, {
+            apiKey: safePoolKey() || '',
+            model: opts?.modelPreference === 'quality' ? FRONTIER_MODEL : ECONOMY_MODEL,
+            signal: opts?.signal,
+            projectFiles: get().files.map((f) => f.path),
+            hasErrors: Boolean(previewSession?.status === 'failed'),
+          });
+
+      const isBuilderAction = forceBuild || BUILDER_INTENTS.has(intentDecision.intent);
+
+      const emitChatEvent = (event: ChatEvent) => {
+        opts?.onChatEvent?.(event);
+        useActivityStore.getState().ingestChatEvent(event);
+      };
+
+      if (!isBuilderAction) {
         onProgress?.('Answering your question...');
-        const previewSession = usePreviewStore.getState().getSession(projectId);
         const chatContext = ChatContextHandler.build({
           projectName: project.name,
           projectDescription: project.description,
@@ -581,20 +606,34 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           buildErrors: previewSession?.logs ?? [],
           question: content,
           attachedFiles: opts?.attachedFiles ?? [],
+          intent: intentDecision.intent,
         });
-        const reply = await answerGeneralQuestion(content, {
+        const replyResult = await executeChatTurn(content, {
           projectName: project.name,
           projectSummary: chatContext.summary,
+          projectContext: chatContext.projectContext,
+          formattedContext: chatContext.formattedPromptContext,
           history: chatContext.history,
+          historySummary: chatContext.historySummary,
           apiKey: safePoolKey() || '',
           model: opts?.modelPreference === 'quality'
             ? 'nvidia/nemotron-3-ultra-550b-a55b:free'
             : 'nvidia/nemotron-3.5-lightning:free',
+          intent: intentDecision.intent,
           onProgress,
           onToken: opts?.onToken,
           onRetry: opts?.onRetry,
+          onEvent: emitChatEvent,
           signal: opts?.signal,
         });
+
+        if (!replyResult.ok) {
+          const chatError = new ChatError(replyResult.error);
+          useTerminalStore.getState().setGenerationError(replyResult.error.message);
+          throw chatError;
+        }
+
+        const reply = replyResult.text;
         const projectUsesSupabase = get().files.some((file) => !file.is_directory && (
           file.path.startsWith('supabase/') || /supabase_flutter|Supabase\.initialize|SupabaseService/.test(file.content)
         ));
@@ -606,7 +645,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           content: reply,
           tool_calls: null,
           changed_files: [],
-          metadata: { chatOnly: true, nextActionPrompts: chatPrompts },
+          metadata: {
+            chatOnly: true,
+            intent: intentDecision.intent,
+            nextActionPrompts: chatPrompts,
+          },
           created_at: new Date().toISOString(),
         };
         set((state) => ({ messages: [...state.messages, chatMessage] }));
@@ -616,10 +659,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           role: 'assistant',
           content: reply,
           changed_files: [],
-          metadata: { chatOnly: true, nextActionPrompts: chatPrompts },
+          metadata: { chatOnly: true, intent: intentDecision.intent, nextActionPrompts: chatPrompts },
         });
         onProgress?.('Answered — project files untouched');
-        return { mode: 'chat' as const };
+        return { mode: 'chat' as const, intent: intentDecision.intent };
       }
 
       const isFirstPrompt = get().messages.length === 1;
@@ -627,6 +670,38 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // An explicit flag (e.g. from the creation wizard's first prompt) always
       // wins: file-counting alone misclassifies templates with 7+ starter files.
       const isInitialGen = opts?.isInitialGeneration ?? (isFirstPrompt || hasStarterOnly);
+      const isSurgicalEdit = !isInitialGen && (opts?.isEdit || intentDecision.intent === 'modify' || intentDecision.intent === 'debug' || intentDecision.intent === 'refactor');
+
+      const runId = crypto.randomUUID();
+      emitChatEvent({ type: 'message.started', runId, intent: intentDecision.intent });
+      emitChatEvent({
+        type: 'tool.started',
+        runId,
+        operationId: 'inspect-project',
+        tool: 'project_inspector',
+        input: { fileCount: get().files.length, intent: intentDecision.intent },
+      });
+      const currentFiles = get().files.filter((f) => !f.is_directory);
+      emitChatEvent({
+        type: 'tool.completed',
+        runId,
+        operationId: 'inspect-project',
+        result: { analyzedFiles: currentFiles.length },
+      });
+
+      emitChatEvent({
+        type: 'agent.thinking',
+        runId,
+        detail: `Planning ${intentDecision.intent} changes…`,
+      });
+
+      emitChatEvent({
+        type: 'tool.started',
+        runId,
+        operationId: 'code-generation',
+        tool: isSurgicalEdit ? 'edit_agent' : 'code_generator',
+        input: { prompt: content, isEdit: isSurgicalEdit },
+      });
 
       if (!isInitialGen) {
         try {
@@ -640,25 +715,48 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const conversationHistory = get().messages.map((m) => ({ role: m.role, content: m.content }));
       const stateManagement = project.state_management || 'provider';
 
-      let outcome = await requestAIGeneration(
-        projectId,
-        get().messages,
-        get().files,
-        isInitialGen,
-        project.name,
-        stateManagement,
-        conversationHistory,
-        onProgress,
-        opts?.onEvent,
-        opts?.signal,
-        project.platform || 'web',
-        project.description || '',
-        opts?.modelPreference ?? 'auto',
-        opts?.onFile,
-        opts?.isRepair ?? false,
-        opts?.isEdit ?? false,
-      );
-      let changedFiles = outcome.changes;
+      let outcome: AgentGenerationOutcome;
+      try {
+        outcome = await requestAIGeneration(
+          projectId,
+          get().messages,
+          get().files,
+          isInitialGen,
+          project.name,
+          stateManagement,
+          conversationHistory,
+          onProgress,
+          opts?.onEvent,
+          opts?.signal,
+          project.platform || 'web',
+          project.description || '',
+          opts?.modelPreference ?? 'auto',
+          opts?.onFile,
+          opts?.isRepair ?? false,
+          opts?.isEdit ?? isSurgicalEdit,
+        );
+      } catch (genError) {
+        emitChatEvent({
+          type: 'tool.failed',
+          runId,
+          operationId: 'code-generation',
+          error: genError instanceof Error ? genError.message : String(genError),
+        });
+        emitChatEvent({
+          type: 'message.failed',
+          runId,
+          error: genError instanceof Error ? genError.message : String(genError),
+        });
+        throw genError;
+      }
+      const changedFiles = outcome.changes;
+
+      emitChatEvent({
+        type: 'tool.completed',
+        runId,
+        operationId: 'code-generation',
+        result: { changedFileCount: changedFiles.length, files: changedFiles.map((c) => c.path) },
+      });
 
       if (changedFiles.length === 0) {
         throw new Error(
@@ -820,7 +918,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       // Artifact gate: fail-fast BEFORE anyone pays for a doomed preview build.
       // If generation clearly produced something unbuildable, log it, skip the
-      // auto-build, and fire one surgical repair round with the gate diagnostics.
+      // auto-build, and queue one surgical repair round with the gate
+      // diagnostics. Repairs are queued (not fired) because the send lock is
+      // still held here.
       const artifactGateFailed = validation && !validation.gate.passed;
       if (artifactGateFailed && validation) {
         const blockers = validation.gate.blockers.slice(0, 8);
@@ -840,9 +940,119 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             ],
           },
         };
-        if (opts?.isRepair !== true && opts?.isEdit !== true && !opts?.signal?.aborted) {
-          void repairFailedBuild(projectId, blockers, 1);
+      }
+
+      // Authoritative compile gate: materialize the saved project in an
+      // isolated workspace and run the real Dart analyzer. "Verified" is only
+      // true when this actually ran and reported zero errors — never because
+      // files merely exist or a heuristic passed.
+      let verification: ProjectVerification | null = null;
+      if (!artifactGateFailed) {
+        const gateFiles = get().files
+          .filter((file) => !file.is_directory)
+          .map((file) => ({ path: file.path, content: file.content ?? '' }));
+        if (gateFiles.length > 0) {
+          onProgress?.('Running the real Dart analyzer on the saved project…');
+          try {
+            verification = await usePreviewStore.getState().verifyProject(projectId, gateFiles, {
+              signal: opts?.signal,
+            });
+          } catch (error) {
+            if (opts?.signal?.aborted) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            verification = {
+              verified: false,
+              skipped: true,
+              ok: false,
+              available: false,
+              summary: `Verification could not run: ${message}`,
+              errorCount: 0,
+              warningCount: 0,
+              diagnostics: [],
+              gate: { passed: false, blockers: [`Verification could not run: ${message}`] },
+              durationMs: 0,
+            };
+          }
+
+          const terminal = useTerminalStore.getState();
+          if (verification.verified) {
+            terminal.addLine({
+              type: 'success',
+              content: `✓ Verified with the real Dart analyzer — 0 errors, ${verification.warningCount} warning(s).`,
+            });
+          } else if (verification.skipped) {
+            terminal.addLine({ type: 'error', content: `✗ NOT verified: ${verification.summary}` });
+          } else {
+            terminal.addLine({
+              type: 'error',
+              content: `✗ Compile gate failed: ${verification.errorCount} error(s), ${verification.warningCount} warning(s).`,
+            });
+            for (const diagnostic of verification.diagnostics
+              .filter((item) => item.severity === 'error')
+              .slice(0, 8)) {
+              terminal.addLine({
+                type: 'error',
+                content: `  [analyzer] ${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column} ${diagnostic.code} ${diagnostic.message}`,
+              });
+            }
+          }
+          onProgress?.(verification.summary);
         }
+      }
+
+      // A skipped verification (SDK offline, no pubspec, unsafe path) is NOT a
+      // code error — it must never auto-repair. Only a real analyzer/pub-get
+      // failure counts as a compile gate failure.
+      const compileGateFailed = Boolean(
+        verification
+        && !verification.verified
+        && !verification.skipped,
+      );
+      const verifiedByCompiler = verification?.verified === true && !artifactGateFailed;
+      outcome = {
+        ...outcome,
+        verified: verifiedByCompiler,
+        verification: {
+          verified: verifiedByCompiler,
+          gates: [
+            ...(outcome.verification?.gates ?? []),
+            ...(verification
+              ? [{
+                id: 'compile-gate',
+                status: verification.verified ? 'pass' : 'fail',
+                detail: verification.summary,
+              }]
+              : []),
+            ...(compileGateFailed && verification
+              ? verification.gate.blockers.slice(0, 8).map((blocker) => ({
+                id: 'compile-gate',
+                status: 'fail',
+                detail: blocker,
+              }))
+              : []),
+          ],
+        },
+      };
+
+      const repairReason: RepairReason | null = artifactGateFailed
+        ? 'artifact'
+        : compileGateFailed
+          ? 'verification'
+          : null;
+      if (
+        repairReason
+        && opts?.isRepair !== true
+        && opts?.isEdit !== true
+        && !opts?.signal?.aborted
+      ) {
+        queueRepair(
+          projectId,
+          repairReason === 'artifact'
+            ? validation?.gate.blockers ?? []
+            : verification?.gate.blockers ?? [],
+          1,
+          repairReason,
+        );
       }
 
       const promptSummary = content.replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -878,7 +1088,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const currentFiles = get().files
           .filter((f) => !f.is_directory)
           .map((f) => ({ path: f.path, content: f.content }));
-        if (currentFiles.length > 0 && !artifactGateFailed) {
+        if (currentFiles.length > 0 && !artifactGateFailed && !compileGateFailed) {
           let sessionId: string | null = null;
           try {
             sessionId = await previewStore.build(projectId, currentFiles, {
@@ -909,7 +1119,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             // for one capped auto-repair pass (A3). Repairs never re-arm.
             const repairRound = opts?.repairRound ?? 0;
             if (opts?.autoRepairBuild !== false && (!opts?.isRepair || repairRound <= MAX_AUTO_REPAIRS)) {
-              watchPreviewBuild(projectId, sessionId, repairRound);
+              watchPreviewBuild(projectId, sessionId);
             }
           }
         }
@@ -921,13 +1131,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           type: 'output',
           content: 'Preview build skipped — artifact gate failed. Repair is running; the build re-queues automatically.',
         });
+      } else if (compileGateFailed) {
+        useTerminalStore.getState().addLine({
+          type: 'output',
+          content: 'Preview build skipped — the Dart analyzer found errors. Files are saved; a targeted repair is queued.',
+        });
       }
+      emitChatEvent({
+        type: 'validation.completed',
+        runId,
+        result: {
+          issueCount: validation.issues.length,
+          fixCount: validation.fixes.length,
+          changes: validation.changes,
+        },
+      });
+      emitChatEvent({ type: 'message.completed', runId });
+
       return {
         mode: 'generation' as const,
         fileCount: changedFiles.length,
         files: changedFiles,
         verified: outcome.verified,
         verification: outcome.verification,
+        intent: intentDecision.intent,
       };
     } // end runBody
   },
@@ -1322,6 +1549,47 @@ function shortModel(modelId: string): string {
 // sendMessage for the same conversation returns immediately (see C4).
 const inFlightSends = new Set<string>();
 
+// Projects whose generation currently owns the send lock. Repairs must never
+// fire inside a send: the duplicate guard would swallow them while the caller
+// logs a false "repair complete". They queue here and flush after the lock is
+// released (sendMessage's finally).
+const activeSendProjects = new Set<string>();
+type RepairReason = 'build' | 'verification' | 'artifact';
+interface PendingRepair {
+  logs: string[];
+  round: number;
+  reason: RepairReason;
+}
+const pendingRepairs = new Map<string, PendingRepair>();
+
+function queueRepair(projectId: string, logs: string[], round = 1, reason: RepairReason = 'build'): void {
+  const existing = pendingRepairs.get(projectId);
+  pendingRepairs.set(projectId, {
+    logs: [...logs],
+    round: Math.max(round, existing?.round ?? 0),
+    reason: existing?.reason ?? reason,
+  });
+  useTerminalStore.getState().addLine({
+    type: 'output',
+    content: `[repair] Queued ${reason} repair for after the current generation finishes.`,
+  });
+}
+
+async function flushQueuedRepair(projectId: string): Promise<void> {
+  const pending = pendingRepairs.get(projectId);
+  if (!pending) return;
+  if (activeSendProjects.has(projectId)) return; // that send's finally flushes
+  pendingRepairs.delete(projectId);
+  try {
+    await repairFailedBuild(projectId, pending.logs, pending.round, undefined, pending.reason);
+  } catch (error) {
+    useTerminalStore.getState().addLine({
+      type: 'error',
+      content: `[repair] Queued repair failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
 // Abort controller for the CURRENT store-driven repair run. The panel's Stop
 // button owns its own controller for panel-initiated sends; repairs are
 // started outside the panel, so their signal lives here.
@@ -1357,7 +1625,7 @@ const MAX_AUTO_REPAIRS = 3;
  * isRepair so they never arm another watcher (no infinite loops).
  * Fire-and-forget: never throws.
  */
-function watchPreviewBuild(projectId: string, sessionId: string, round = 0): void {
+function watchPreviewBuild(projectId: string, sessionId: string): void {
   let polls = 0;
   const timer = setInterval(() => {
     polls++;
@@ -1522,16 +1790,30 @@ async function attemptDeterministicRepair(projectId: string, logs: string[]): Pr
   return fixedAny;
 }
 
-async function repairFailedBuild(projectId: string, logs: string[], round = 1, signal?: AbortSignal): Promise<void> {
+async function repairFailedBuild(
+  projectId: string,
+  logs: string[],
+  round = 1,
+  signal?: AbortSignal,
+  reason: RepairReason = 'build',
+): Promise<void> {
+  // Never enter sendMessage while this project's generation owns the lock:
+  // the duplicate guard returns `mode: 'duplicate'`, and pretending that was
+  // a completed repair was the bug that restarted whole generations.
+  if (activeSendProjects.has(projectId)) {
+    queueRepair(projectId, logs, round, reason);
+    return;
+  }
+
   const terminal = useTerminalStore.getState();
   const activity = useActivityStore.getState();
-  activity.begin(projectId, `Repair preview build (round ${round})`, false);
+  activity.begin(projectId, `Repair ${reason === 'build' ? 'preview build' : reason} (round ${round})`, false);
 
   terminal.addLine({
     type: 'output',
-    content: `[repair] Checking preview build errors (attempt ${round}/${MAX_AUTO_REPAIRS})…`,
+    content: `[repair] Checking ${reason === 'build' ? 'preview build' : reason} errors (attempt ${round}/${MAX_AUTO_REPAIRS})…`,
   });
-  activity.ingestProgress(`Checking preview build errors (attempt ${round}/${MAX_AUTO_REPAIRS})`);
+  activity.ingestProgress(`Checking ${reason === 'build' ? 'preview build' : reason} errors (attempt ${round}/${MAX_AUTO_REPAIRS})`);
 
   try {
     const store = useProjectStore.getState();
@@ -1549,7 +1831,7 @@ async function repairFailedBuild(projectId: string, logs: string[], round = 1, s
       const updatedFiles = useProjectStore.getState().files;
       const newSessionId = await usePreviewStore.getState().build(projectId, updatedFiles);
       if (newSessionId) {
-        watchPreviewBuild(projectId, newSessionId, round);
+        watchPreviewBuild(projectId, newSessionId);
       }
       return;
     }
@@ -1570,12 +1852,21 @@ async function repairFailedBuild(projectId: string, logs: string[], round = 1, s
 
     terminal.addLine({
       type: 'error',
-      content: `✗ Preview build failed — agent repairing compile errors…`,
+      content: `✗ ${reason === 'build' ? 'Preview build failed' : `Project ${reason} gate failed`} — agent repairing compile errors…`,
     });
 
-    await useProjectStore.getState().sendMessage(
+    const heading = reason === 'artifact'
+      ? 'The deterministic project gate found unresolved files or imports in the generated project'
+      : reason === 'verification'
+        ? 'The Dart analyzer (dart analyze) found errors in the saved project'
+        : 'The Flutter preview build encountered compile errors';
+    const focus = reason === 'artifact'
+      ? 'Create the missing files or fix the imports listed below. Do not remove working features.'
+      : 'Read the failing file(s) and fix the actual root cause.';
+
+    const result = await useProjectStore.getState().sendMessage(
       projectId,
-      `The Flutter preview build encountered compile errors (attempt ${round}/${MAX_AUTO_REPAIRS}). Fix the code so it compiles cleanly.\n\nErrors:\n${cleanErrors || '(no specific errors captured)'}\n\nRules:\n- Read the failing file(s) and fix the actual root cause.\n- Keep every file complete and compilable; no TODOs or placeholders.`,
+      `${heading} (attempt ${round}/${MAX_AUTO_REPAIRS}). Fix the code so it compiles cleanly.\n\nErrors:\n${cleanErrors || '(no specific errors captured)'}\n\nRules:\n- ${focus}\n- Keep every file complete and compilable; no TODOs or placeholders.`,
       (message) => {
         terminal.addLine({ type: 'output', content: `  [repair ${round}] ${message}` });
         activity.ingestProgress(message);
@@ -1590,8 +1881,27 @@ async function repairFailedBuild(projectId: string, logs: string[], round = 1, s
         onFile: (file) => activity.ingestFile(file),
       },
     );
-    terminal.addLine({ type: 'success', content: '✓ Repair pass complete — preview rebuilding' });
-    activity.end('success', 'Repair pass complete — preview rebuilding');
+
+    if (result.mode === 'duplicate') {
+      terminal.addLine({
+        type: 'error',
+        content: '✗ Repair did NOT run — another generation still holds the chat. It is queued and will retry automatically.',
+      });
+      queueRepair(projectId, logs, round, reason);
+      activity.end('stopped', 'Repair queued behind an in-flight generation');
+      return;
+    }
+
+    if (result.verified) {
+      terminal.addLine({ type: 'success', content: '✓ Repair verified — analyzer clean; preview rebuilding' });
+      activity.end('success', 'Repair verified — preview rebuilding');
+    } else {
+      terminal.addLine({
+        type: 'output',
+        content: 'Repair pass finished, but the project is still not verified. Files are saved; see the analyzer errors above.',
+      });
+      activity.end('error', 'Repair finished but verification still fails');
+    }
   } catch (e) {
     const message = (e as Error).message;
     terminal.addLine({ type: 'error', content: `✗ Auto-repair failed: ${message}` });
@@ -1906,7 +2216,7 @@ function resetAutoRepairBudget(projectId: string): void {
   autoRepairAttempts.set(projectId, 0);
 }
 
-registerBuildFailedHandler((projectId, sessionId, logs) => {
+registerBuildFailedHandler((projectId, sessionId) => {
   if (autoRepairSessions.has(sessionId)) return; // already handled this failure
   autoRepairSessions.add(sessionId);
   const attempts = autoRepairAttempts.get(projectId) ?? 0;

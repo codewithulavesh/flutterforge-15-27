@@ -2,6 +2,45 @@ import { create } from 'zustand';
 
 type PreviewStatus = 'idle' | 'queued' | 'building' | 'running' | 'failed' | 'stopped';
 
+export interface ProjectDiagnostic {
+  filePath: string;
+  line: number;
+  column: number;
+  severity: 'error' | 'warning' | 'info';
+  code: string;
+  message: string;
+  correction: string;
+}
+
+export interface ProjectVerification {
+  verified: boolean;
+  skipped: boolean;
+  ok: boolean;
+  available: boolean;
+  summary: string;
+  errorCount: number;
+  warningCount: number;
+  diagnostics: ProjectDiagnostic[];
+  gate: { passed: boolean; blockers: string[] };
+  pubGet?: { ran: boolean; ok: boolean; output: string };
+  durationMs: number;
+}
+
+interface VerifyResponse {
+  error?: string;
+  verified?: boolean;
+  skipped?: boolean;
+  ok?: boolean;
+  available?: boolean;
+  summary?: string;
+  errorCount?: number;
+  warningCount?: number;
+  diagnostics?: ProjectDiagnostic[];
+  gate?: { passed?: boolean; blockers?: unknown[] };
+  pubGet?: { ran?: boolean; ok?: boolean; output?: unknown };
+  durationMs?: number;
+}
+
 interface PreviewSession {
   sessionId: string;
   projectId: string;
@@ -27,6 +66,8 @@ interface PreviewState {
 
   // Actions
   build: (projectId: string, files: Array<{ path: string; content: string | null; is_directory?: boolean }>, opts?: { supabaseUrl?: string; supabaseAnonKey?: string; }) => Promise<string>;
+  /** Materialize the project in an isolated workspace and run the real Dart analyzer. */
+  verifyProject: (projectId: string, files: Array<{ path: string; content: string | null; is_directory?: boolean }>, opts?: { signal?: AbortSignal }) => Promise<ProjectVerification>;
   pollStatus: (sessionId: string) => Promise<PreviewSession | null>;
   checkProjectStatus: (projectId: string) => Promise<PreviewSession | null>;
   stop: (sessionId: string) => Promise<void>;
@@ -44,7 +85,7 @@ interface PreviewState {
 // — Vite's proxy routes /api → localhost:8787 automatically.
 // Only set VITE_PREVIEW_API_URL when deploying the frontend separately from
 // the harness (e.g. staging) where you need to point at a specific host.
-const API_BASE = (typeof window !== 'undefined' && (window as any).flutterforgeDesktop?.isDesktop
+const API_BASE = (typeof window !== 'undefined' && (window as Window & { flutterforgeDesktop?: { isDesktop?: boolean } }).flutterforgeDesktop?.isDesktop
   ? ''
   : import.meta.env.VITE_PREVIEW_API_URL || '').replace(/\/+$/, '');
 
@@ -192,6 +233,74 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
       }
       set({ error: msg, isLoading: false });
       throw new Error(msg);
+    }
+  },
+
+  verifyProject: async (projectId, files, opts) => {
+    const filteredFiles = files
+      .filter((file) => !file.is_directory && !file.path.endsWith('/') && file.content !== null)
+      .map((file) => ({ path: file.path, content: file.content || '' }));
+    const unavailable = (message: string): ProjectVerification => ({
+      verified: false,
+      skipped: true,
+      ok: false,
+      available: false,
+      summary: message,
+      errorCount: 0,
+      warningCount: 0,
+      diagnostics: [],
+      gate: { passed: false, blockers: [message] },
+      durationMs: 0,
+    });
+
+    if (filteredFiles.length === 0) {
+      return unavailable('No project files are loaded, so nothing could be verified.');
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/verify/${encodeURIComponent(projectId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: filteredFiles }),
+        signal: opts?.signal,
+      });
+      const text = await res.text();
+      let data: VerifyResponse = {};
+      if (text.trim()) {
+        try {
+          data = JSON.parse(text) as VerifyResponse;
+        } catch {
+          return unavailable(`Verification server returned an unreadable response (HTTP ${res.status}).`);
+        }
+      }
+      if (!res.ok) {
+        return unavailable(data.error || `Verification request failed (HTTP ${res.status}).`);
+      }
+      if (!data || typeof data.verified !== 'boolean') {
+        return unavailable('Verification server returned no verdict. The project was not verified.');
+      }
+      return {
+        verified: data.verified === true,
+        skipped: data.skipped === true,
+        ok: data.ok === true,
+        available: data.available !== false,
+        summary: typeof data.summary === 'string' ? data.summary : 'Verification finished without a summary.',
+        errorCount: Number(data.errorCount) || 0,
+        warningCount: Number(data.warningCount) || 0,
+        diagnostics: Array.isArray(data.diagnostics) ? data.diagnostics : [],
+        gate: data.gate && Array.isArray(data.gate.blockers)
+          ? { passed: data.gate.passed === true, blockers: data.gate.blockers.map(String) }
+          : { passed: data.verified === true, blockers: [] },
+        pubGet: data.pubGet && typeof data.pubGet === 'object'
+          ? { ran: data.pubGet.ran === true, ok: data.pubGet.ok === true, output: String(data.pubGet.output ?? '') }
+          : undefined,
+        durationMs: Number(data.durationMs) || 0,
+      };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      return unavailable(
+        `Verification server is offline — ${error instanceof Error ? error.message : 'request failed'}`,
+      );
     }
   },
 

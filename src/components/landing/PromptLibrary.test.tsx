@@ -16,9 +16,11 @@ beforeEach(() => {
     unobserve() {}
     disconnect() {}
   });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
 });
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Reflect.deleteProperty(document, 'execCommand'); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); Reflect.deleteProperty(document, 'execCommand'); Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal'); });
 
 function PromptHarness() {
   const [prompt, setPrompt] = useState('');
@@ -70,14 +72,24 @@ describe('Prompt library', () => {
     Reflect.deleteProperty(document, 'execCommand');
   });
 
-  it('keeps demos paused for reduced motion and allows explicit playback', async () => {
-    const user = userEvent.setup();
+  it('keeps a matching live film at the top of each section', () => {
     render(<PromptHarness />);
-    const play = screen.getByRole('button', { name: 'Play Update the app demo' });
-    await user.click(play);
-    const pause = screen.getByRole('button', { name: 'Pause Update the app demo' });
-    expect(pause).toBeInTheDocument();
-    await user.click(pause);
-    expect(screen.getByRole('button', { name: 'Play Update the app demo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play the Update film, 0:23' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play the Restyle film, 0:16' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play the Add film, 0:21' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Play the Fix & Ship film, 0:19' })).toHaveLength(2);
+  });
+
+  it('opens a section film in the player dialog', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function (this: HTMLDialogElement) { this.open = true; },
+    });
+    render(<PromptHarness />);
+    await user.click(screen.getByRole('button', { name: 'Play the Update film, 0:23' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('open');
+    expect(dialog).toHaveTextContent('01 / 04 · 0:23 · Live capture');
   });
 });

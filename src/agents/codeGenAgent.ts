@@ -1,35 +1,125 @@
 /**
- * Code Gen Agent — generates pubspec.yaml, app theme, real Provider/Riverpod state classes,
- * and all core infrastructure files needed before screens are built.
+ * Code Gen Agent — generates pubspec.yaml, app theme, real Provider/Riverpod/Bloc
+ * state classes, and all core infrastructure files needed before screens are built.
+ *
+ * Determinism contract:
+ * - File ordering is stable (generatedFiles are re-keyed in sorted path order).
+ * - Provider/notifier/cubit files are derived from the same model specs the
+ *   data-models agent emits: `<Model>Provider` (provider) / `<Model>Notifier`
+ *   + `<model>Provider` (riverpod) / `<Model>Cubit` (bloc). Every model in
+ *   `state.dataSchema` gets exactly one provider file, synthesized locally if
+ *   the LLM does not produce a valid one.
+ * - `bloc` is only generated when `flutter_bloc` (or `bloc`) is actually
+ *   declared in `architectureSpec.packages` — flutter_bloc is a known,
+ *   published package (see KNOWN_VERSIONS in src/agent/preWriteValidator.ts,
+ *   `flutter_bloc: '^8.1.6'`). Otherwise the agent falls back to provider and
+ *   records a warning diagnostic. Riverpod does the same against
+ *   `riverpod` / `flutter_riverpod`.
+ * - LLM output is accepted only when it parses (balanced delimiters, no
+ *   TODO/UnimplementedError, no `part of`, resolvable imports). Anything
+ *   unparseable is replaced by a deterministic local synthesis of the file.
+ * - Package name comes from pubspec (via state) or a sanitized appName,
+ *   falling back to `flutterforge_app` — same rule as the data-models agent
+ *   and src/agents/projectContract.ts.
  */
-import type { ProjectState, GeneratedFile } from '../orchestrator/state';
+import type {
+  GateDiagnostic,
+  ProjectState,
+  GeneratedFile,
+  TableColumn,
+  TableDefinition,
+} from '../orchestrator/state';
 import { callLLMText, parseFilesFromLLMOutput, agentModelFor } from './llmClient';
 
+// Mirror of the relevant entries in src/agent/preWriteValidator.ts KNOWN_VERSIONS
+// (flutter_bloc ^8.1.6 and bloc ^8.1.4 are known-published packages, verified there).
+const KNOWN_PACKAGE_VERSIONS: Record<string, string> = {
+  provider: '^6.1.2',
+  riverpod: '^2.6.1',
+  flutter_riverpod: '^2.6.1',
+  bloc: '^8.1.4',
+  flutter_bloc: '^8.1.6',
+};
+
+const RESERVED_LLM_PATHS = new Set([
+  'pubspec.yaml',
+  'analysis_options.yaml',
+  'lib/main.dart',
+  'lib/app/app.dart',
+  'lib/app/app_theme.dart',
+  'lib/core/constants/app_constants.dart',
+]);
+
 export async function runCodeGenAgent(state: ProjectState): Promise<Partial<ProjectState>> {
-  const appName = state.productBrief?.appName || 'FlutterApp';
-  const pkgName = appName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+  const appName = state.productBrief?.appName || 'FlutterForge App';
+  const pkg = guessPackageName(state);
   const tokens = state.designTokens;
   const arch = state.architectureSpec || state.architecture;
   const intake = state._intakeData as Record<string, unknown> | undefined;
   const domain = (intake?.domain as string) || 'general';
   const keyFeatures = (intake?.keyFeatures as string[]) || [];
   const needsSupabase = arch?.backendMode === 'supabase';
-  const stateManagement = arch?.stateManagement || 'provider';
-  const files = new Map<string, GeneratedFile>(state.generatedFiles);
+  const requestedStateManagement = arch?.stateManagement || 'provider';
+  const files = new Map<string, GeneratedFile>(state.generatedFiles ?? new Map());
+
+  const diagnostics: GateDiagnostic[] = [...state.diagnostics];
+  const agentLogs: string[] = [];
+
+  // ── 0. Resolve effective state management (bloc/riverpod only when their
+  //       packages are actually declared; otherwise fall back to provider) ──
+  const packages: Record<string, string> = { ...(arch?.packages || {}) };
+  let stateManagement = requestedStateManagement;
+  if (requestedStateManagement === 'bloc') {
+    const declared = Boolean(packages['flutter_bloc'] || packages['bloc']);
+    if (!declared) {
+      stateManagement = 'provider';
+      packages['provider'] = packages['provider'] || KNOWN_PACKAGE_VERSIONS.provider;
+      diagnostics.push({
+        gate: 'code-gen',
+        level: 'warning',
+        message:
+          'architectureSpec requested bloc state management, but flutter_bloc is not declared in architectureSpec.packages; generated provider-style ChangeNotifier state instead.',
+        suggestion: `Add flutter_bloc: '${KNOWN_PACKAGE_VERSIONS.flutter_bloc}' to architectureSpec.packages to enable bloc generation.`,
+      });
+      agentLogs.push(
+        '[CodeGenAgent] bloc requested but flutter_bloc is missing from architectureSpec.packages — falling back to provider'
+      );
+    } else if (!packages['flutter_bloc']) {
+      packages['flutter_bloc'] = KNOWN_PACKAGE_VERSIONS.flutter_bloc;
+    }
+  } else if (requestedStateManagement === 'riverpod') {
+    const declared = Boolean(packages['flutter_riverpod'] || packages['riverpod']);
+    if (!declared) {
+      stateManagement = 'provider';
+      packages['provider'] = packages['provider'] || KNOWN_PACKAGE_VERSIONS.provider;
+      diagnostics.push({
+        gate: 'code-gen',
+        level: 'warning',
+        message:
+          'architectureSpec requested riverpod state management, but neither riverpod nor flutter_riverpod is declared in architectureSpec.packages; generated provider-style ChangeNotifier state instead.',
+        suggestion: `Add flutter_riverpod: '${KNOWN_PACKAGE_VERSIONS.flutter_riverpod}' to architectureSpec.packages to enable riverpod generation.`,
+      });
+      agentLogs.push(
+        '[CodeGenAgent] riverpod requested but no riverpod package is declared in architectureSpec.packages — falling back to provider'
+      );
+    }
+  } else if (!packages['provider']) {
+    packages['provider'] = KNOWN_PACKAGE_VERSIONS.provider;
+  }
 
   const primaryHex = tokens?.primaryColor?.replace('#', '0xFF') || '0xFF2563EB';
-  const packages = arch?.packages || {};
 
   // ── 1. pubspec.yaml (always deterministic) ───────────────────────
   const depsYaml = Object.entries(packages)
-    .map(([pkg, ver]) => `  ${pkg}: ${ver}`)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([pkgName, ver]) => `  ${pkgName}: ${ver}`)
     .join('\n');
 
   files.set('pubspec.yaml', {
     path: 'pubspec.yaml',
     action: 'created',
     language: 'yaml',
-    content: `name: ${pkgName}
+    content: `name: ${pkg}
 description: "${state.productBrief?.oneLiner?.slice(0, 100) || `${appName} — generated by FlutterForge`}"
 publish_to: 'none'
 version: 1.0.0+1
@@ -62,11 +152,11 @@ flutter:
     language: 'dart',
     content: `import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:${pkgName}/app/app.dart';
-import 'package:${pkgName}/core/network/dio_client.dart';
-import 'package:${pkgName}/core/storage/local_storage_service.dart';
-import 'package:${pkgName}/core/services/app_shell_client.dart';
-${needsSupabase ? "import 'package:${pkgName}/core/services/auth_service.dart';" : ''}
+import 'package:${pkg}/app/app.dart';
+import 'package:${pkg}/core/network/dio_client.dart';
+import 'package:${pkg}/core/storage/local_storage_service.dart';
+import 'package:${pkg}/core/services/app_shell_client.dart';
+${needsSupabase ? `import 'package:${pkg}/core/services/auth_service.dart';` : ''}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,7 +164,7 @@ Future<void> main() async {
   await LocalStorageService.instance.init();
   final prefs = await SharedPreferences.getInstance();
   AppShellClient.init(prefs);
-  ${needsSupabase ? "await AuthService.init();" : ''}
+  ${needsSupabase ? 'await AuthService.init();' : ''}
   runApp(const App());
 }
 `,
@@ -85,8 +175,8 @@ Future<void> main() async {
     language: 'dart',
     content: `import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:${pkgName}/core/router/app_router.dart';
-import 'package:${pkgName}/app/app_theme.dart';
+import 'package:${pkg}/core/router/app_router.dart';
+import 'package:${pkg}/app/app_theme.dart';
 
 /// Root widget. Router + Theme are wired here so they work in every screen.
 class App extends StatelessWidget {
@@ -113,28 +203,6 @@ class App extends StatelessWidget {
 }
 `,
   });
-  files.set('lib/app/app_theme.dart', {
-    path: 'lib/app/app_theme.dart',
-    action: 'created',
-    language: 'dart',
-    content: `import 'package:flutter/material.dart';
-
-/// Material 3 extension facade — re-exports for feature code.
-export 'package:${pkgName}/core/theme/app_theme.dart';
-`,
-  });
-  files.set('lib/core/constants/app_constants.dart', {
-    path: 'lib/core/constants/app_constants.dart',
-    action: 'created',
-    language: 'dart',
-    content: `class AppConstants {
-  AppConstants._();
-  static const appName = '${state.productBrief?.appName || 'App'}';
-  static const pageSize = 20;
-  static const animDuration = Duration(milliseconds: 300);
-}
-`,
-  });
   files.set('lib/core/errors/failures.dart', {
     path: 'lib/core/errors/failures.dart',
     action: 'created',
@@ -146,8 +214,8 @@ sealed class Failure {
   final Object? cause;
 }
 
-final class NetworkFailure extends Failure { const NetworkFailure(super.message, {this.cause}); final Object? cause; }
-final class ServerFailure extends Failure { const ServerFailure(super.message, {this.cause}); final Object? cause; }
+final class NetworkFailure extends Failure { const NetworkFailure(super.message, {super.cause}); }
+final class ServerFailure extends Failure { const ServerFailure(super.message, {super.cause}); }
 final class UnknownFailure extends Failure { const UnknownFailure([super.message = 'Something went wrong']); }
 `,
   });
@@ -285,16 +353,17 @@ linter:
       [
         {
           role: 'system',
-          content: `You are a senior Flutter developer. Write PRODUCTION-QUALITY Flutter code ONLY. 
+          content: `You are a senior Flutter developer. Write PRODUCTION-QUALITY Flutter code ONLY.
 No explanations. No markdown. Just the complete Dart file.
+Never emit a \`part of\` directive and never use .g.dart files. No TODO markers.
 
-Generate lib/core/theme/app_theme.dart that:
+Generate lib/app/app_theme.dart that:
 1. Uses Material 3 (useMaterial3: true always)
 2. ColorScheme.fromSeed with the given primary color
 3. Full light + dark ThemeData
 4. Custom text theme: headline uses ${tokens?.fontFamily || 'Roboto'}, consistent sizing
 5. Consistent border radius (${tokens?.borderRadius || 12}px) on all components
-6. CardTheme with shadow and shape
+6. CardThemeData with shadow and shape
 7. FilledButtonTheme, OutlinedButtonTheme, TextButtonTheme all configured
 8. InputDecorationTheme (outlined style, correct border radius)
 9. AppBarTheme (no elevation on light, centerTitle false)
@@ -306,7 +375,7 @@ Generate lib/core/theme/app_theme.dart that:
           role: 'user',
           content: `Create the complete app_theme.dart for "${appName}" (${domain} app):
 Primary seed: ${tokens?.primaryColor || '#2563EB'} → 0xFF hex: ${primaryHex}
-Font: ${tokens?.fontFamily || 'Roboto'}  
+Font: ${tokens?.fontFamily || 'Roboto'}
 Border radius: ${tokens?.borderRadius || 12}
 ${packages['google_fonts'] ? 'Uses google_fonts package — import and use GoogleFonts.' : 'No google_fonts — use fontFamily string.'}
 ${tokens?.isDarkPreferred ? 'Default theme mode: dark' : 'Default theme mode: light'}
@@ -319,15 +388,19 @@ Output ONLY the complete Dart file content:`,
     themeRaw = themeRaw.replace(/^```(?:dart)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
   } catch { /* use fallback */ }
 
-  if (!themeRaw || themeRaw.length < 50) {
+  if (!themeRaw || themeRaw.length < 50 || !validateDartSource(themeRaw).ok) {
+    if (themeRaw && themeRaw.trim().length >= 1) {
+      agentLogs.push('[CodeGenAgent] LLM parse failed for lib/app/app_theme.dart; used deterministic fallback');
+    }
     themeRaw = generateThemeFallback(appName, primaryHex, tokens?.fontFamily || 'Roboto', tokens?.borderRadius || 12, tokens?.isDarkPreferred || false);
   }
-  files.set('lib/core/theme/app_theme.dart', { path: 'lib/core/theme/app_theme.dart', action: 'created', language: 'dart', content: themeRaw });
+  files.set('lib/app/app_theme.dart', { path: 'lib/app/app_theme.dart', action: 'created', language: 'dart', content: themeRaw });
 
-  // ── 4. State Management Layer (AI generated — real providers) ─────
+  // ── 4. State Management Layer (AI-assisted, deterministically enforced) ──
   const screens = state.screenGraph?.screens || [];
-  const modelFiles = (state._modelFiles as string[]) || [];
-  const modelNames = modelFiles.map((f) => f.split('/').pop()?.replace('.dart', '').replace(/_model/, 'Model') || '').filter(Boolean);
+  const tables = state.dataSchema?.tables ?? [];
+  const modelSpecs = collectModelSpecs(state, tables, arch?.features);
+  const modelNames = modelSpecs.map((s) => s.className);
 
   let stateRaw = '';
   try {
@@ -335,20 +408,21 @@ Output ONLY the complete Dart file content:`,
       [
         {
           role: 'system',
-          content: `You are a senior Flutter developer. Write PRODUCTION-QUALITY Provider/ChangeNotifier state classes.
+          content: `You are a senior Flutter developer. Write PRODUCTION-QUALITY state classes.
 
 RULES:
-1. Each screen/feature gets its own ChangeNotifier provider
+1. One state file per domain model, named <name>_provider.dart
 2. No hardcoded data — use proper async loading patterns
 3. ViewState enum: initial, loading, loaded, error
-4. Providers hold: state enum, data list, error message, loading flag  
+4. Classes hold: state enum, data list, error message, loading flag
 5. Methods: load(), refresh(), create(), update(), delete() as appropriate
 6. Error handling: catch exceptions, set error state
-7. Dispose: cancel subscriptions in dispose()
-8. Realistic mock data that matches the domain — not "Item 1", "Item 2"
+7. State management style for this app: ${stateManagement}
+8. Realistic seed data that matches the domain — deterministic sample values
+9. NEVER emit a \`part of\` directive. No TODO comments, no UnimplementedError.
 
 Output format:
-// FILE: lib/features/home/providers/home_provider.dart
+// FILE: lib/features/<feature>/providers/<name>_provider.dart
 \`\`\`dart
 ...full Dart code...
 \`\`\``,
@@ -357,20 +431,20 @@ Output format:
           role: 'user',
           content: `Generate state management providers for "${appName}" (${domain} app).
 
-Package: ${pkgName}
+Package: ${pkg}
 State management: ${stateManagement}
-Domain models available: ${modelNames.join(', ')}
+Domain models available: ${modelNames.join(', ') || '(none)'}
+Schema tables: ${tables.map((t) => t.name).join(', ') || '(none)'}
 Screens: ${screens.map((s) => `${s.name} — ${s.purpose}`).join('\n')}
 Key features: ${keyFeatures.join(', ')}
 
-For each screen/feature, create a ChangeNotifier provider with:
-- Realistic mock data that matches "${appName}" domain
-- Real async loading with Future.delayed simulation  
+For each domain model, create a matching state class with:
+- The model class imported via package:${pkg}/...
+- Real async loading with Future.delayed simulation
 - Proper error handling
-- Create/Update/Delete operations where appropriate
+- Create/Update/Delete operations
 
-Domain-specific: generate providers that make sense for a ${domain} app.
-Example: for fitness → WorkoutProvider with real workout data, ExerciseProvider, etc.`,
+State management specifics: ${stateManagement === 'provider' ? 'ChangeNotifier + ChangeNotifierProvider' : stateManagement === 'riverpod' ? 'StateNotifier + StateNotifierProvider (riverpod 3.x style)' : 'Cubit (flutter_bloc)'}.`,
         },
       ],
       { model: agentModelFor('code-gen'), temperature: 0.3, maxTokens: 6000 }
@@ -380,12 +454,85 @@ Example: for fitness → WorkoutProvider with real workout data, ExerciseProvide
     stateRaw = '';
   }
 
+  // ── 4a. Validate + stage LLM provider files ───────────────────────────
   const parsedProviders = parseFilesFromLLMOutput(stateRaw);
+  const llmProviders = new Map<string, string>();
   for (const f of parsedProviders) {
+    const path = f.path.trim();
     const cleanContent = f.content.replace(/^```(?:dart)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    if (cleanContent.length > 30) {
-      files.set(f.path, { path: f.path, action: 'created', language: 'dart', content: cleanContent });
+
+    if (!isValidGeneratedPath(path) || !path.startsWith('lib/')) {
+      agentLogs.push(`[CodeGenAgent] Skipping LLM state file at invalid path ${path || '(empty)'}`);
+      continue;
     }
+    if (RESERVED_LLM_PATHS.has(path)) {
+      agentLogs.push(`[CodeGenAgent] Ignoring LLM output for deterministic file ${path}`);
+      continue;
+    }
+
+    const validity = validateDartSource(cleanContent);
+    if (!validity.ok || !/\bclass\s+[A-Za-z_][A-Za-z0-9_]*\b/.test(cleanContent)) {
+      const reason = !validity.ok ? validity.reason : 'no class declaration';
+      const spec = findSpecForProviderPath(modelSpecs, path, cleanContent);
+      if (spec) {
+        const providerPath = providerPathForModel(spec.path);
+        if (!llmProviders.has(providerPath) && !files.has(providerPath)) {
+          putGeneratedFile(files, providerPath, 'dart', synthesizeProviderContent(spec, pkg, stateManagement, packages));
+        }
+        agentLogs.push(`[CodeGenAgent] LLM parse failed for ${path}; used deterministic fallback`);
+        diagnostics.push({
+          gate: 'code-gen',
+          level: 'info',
+          file: path,
+          message: `LLM output for ${path} failed validation (${reason}); replaced with deterministic synthesis for ${spec.className}.`,
+        });
+      } else {
+        agentLogs.push(`[CodeGenAgent] Dropped unparseable LLM file ${path} (${reason}); no matching model to synthesize`);
+      }
+      continue;
+    }
+    llmProviders.set(path, cleanContent);
+  }
+
+  // ── 4b. Fixpoint: every package:<pkg> import must resolve ────────────
+  for (let guard = 0; guard < 10; guard += 1) {
+    let changed = false;
+    for (const [path, content] of [...llmProviders].sort(([a], [b]) => (a < b ? -1 : 1))) {
+      const candidates = new Set<string>([...files.keys(), ...llmProviders.keys()]);
+      const missing = unresolvedImports(content, path, candidates, pkg);
+      if (missing.length === 0) continue;
+      const spec = findSpecForProviderPath(modelSpecs, path, content);
+      if (spec) {
+        putGeneratedFile(files, providerPathForModel(spec.path), 'dart', synthesizeProviderContent(spec, pkg, stateManagement, packages));
+        agentLogs.push(`[CodeGenAgent] LLM parse failed for ${path}; used deterministic fallback`);
+        diagnostics.push({
+          gate: 'code-gen',
+          level: 'info',
+          file: path,
+          message: `LLM file ${path} imports ${missing.join(', ')} which do not exist; replaced with deterministic synthesis for ${spec.className}.`,
+        });
+      } else {
+        agentLogs.push(`[CodeGenAgent] Dropped LLM file ${path}: unresolved imports (${missing.join(', ')})`);
+      }
+      llmProviders.delete(path);
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  for (const [path, content] of llmProviders) {
+    putGeneratedFile(files, path, 'dart', content);
+  }
+
+  // ── 4c. Guarantee one provider file per model (deterministic) ──────────
+  let synthesizedProviders = 0;
+  for (const spec of [...modelSpecs].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+    const providerPath = providerPathForModel(spec.path);
+    if (files.has(providerPath)) continue;
+    putGeneratedFile(files, providerPath, 'dart', synthesizeProviderContent(spec, pkg, stateManagement, packages));
+    synthesizedProviders += 1;
+  }
+  if (synthesizedProviders > 0) {
+    agentLogs.push(`[CodeGenAgent] Synthesized ${synthesizedProviders} provider file(s) deterministically`);
   }
 
   // ── 5. Constants & utilities ──────────────────────────────────────
@@ -419,15 +566,844 @@ Example: for fitness → WorkoutProvider with real workout data, ExerciseProvide
 `,
   });
 
-  const providerCount = [...files.keys()].filter((k) => k.includes('/providers/')).length;
+  // ── 6. Deterministic output ordering ────────────────────────────────
+  const sortedFiles = sortFiles(files);
+  const providerCount = [...sortedFiles.keys()].filter((k) => /\/providers\/[^/]+\.dart$/.test(k)).length;
   return {
-    generatedFiles: files,
-    _providerFiles: [...files.keys()].filter((k) => k.includes('/providers/')),
+    generatedFiles: sortedFiles,
+    _providerFiles: [...sortedFiles.keys()].filter((k) => /\/providers\/[^/]+\.dart$/.test(k)),
+    diagnostics,
     logs: [
       ...state.logs,
-      `[Code Gen Agent] pubspec.yaml (${Object.keys(packages).length} deps) | app_theme.dart (M3, ${tokens?.primaryColor}) | ${providerCount} providers | constants`,
+      ...agentLogs,
+      `[Code Gen Agent] pubspec.yaml (${Object.keys(packages).length} deps) | app_theme.dart (M3, ${tokens?.primaryColor}) | ${providerCount} providers | state: ${stateManagement}`,
     ],
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Package name handling — same convention as the data-models agent and
+// src/agents/projectContract.ts (pubspec name when known, sanitized appName,
+// else flutterforge_app).
+// ─────────────────────────────────────────────────────────────────────────
+
+function sanitizePackageName(raw: string): string {
+  let s = String(raw ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/_+/g, '_');
+  s = s.replace(/^_+|_+$/g, '').replace(/^[0-9_]+/, '');
+  if (!s) return '';
+  if (!/^[a-z]/.test(s)) s = `app_${s}`;
+  return s.slice(0, 60);
+}
+
+function guessPackageName(state: ProjectState): string {
+  const pubspec = state.generatedFiles?.get('pubspec.yaml')?.content;
+  if (pubspec) {
+    const match = pubspec.match(/^name\s*:\s*([^\r\n]+)/m);
+    const fromPubspec = match?.[1]?.trim().replace(/^['"]|['"]$/g, '') ?? '';
+    const sanitized = sanitizePackageName(fromPubspec);
+    if (sanitized) return sanitized;
+  }
+  return sanitizePackageName(state.productBrief?.appName ?? '') || 'flutterforge_app';
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Naming helpers
+// ─────────────────────────────────────────────────────────────────────────
+
+const SINGULAR_EXCEPTIONS = new Set([
+  'series', 'species', 'news', 'information', 'equipment', 'sheep', 'fish',
+  'means', 'crossroads', 'status', 'alias', 'analysis', 'basis', 'crisis',
+]);
+
+function singularizeWord(word: string): string {
+  const w = word.toLowerCase();
+  if (SINGULAR_EXCEPTIONS.has(w)) return w;
+  if (/ies$/.test(w) && w.length > 3) return `${w.slice(0, -3)}y`;
+  if (/(sses|ches|shes|xes|zes)$/.test(w)) return w.slice(0, -2);
+  if (/s$/.test(w) && !/ss$/.test(w) && w.length > 1) return w.slice(0, -1);
+  return w;
+}
+
+function singularize(name: string): string {
+  const parts = String(name).split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (parts.length === 0) return String(name);
+  parts[parts.length - 1] = singularizeWord(parts[parts.length - 1]);
+  return parts.join('_');
+}
+
+function slugify(value: string): string {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+}
+
+function toPascalCase(raw: string): string {
+  const parts = String(raw).split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const joined = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+  if (!joined) return 'Record';
+  return /^[A-Za-z]/.test(joined) ? joined : `Row${joined}`;
+}
+
+function toSnakeCase(raw: string): string {
+  return String(raw)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+}
+
+function lowerFirst(value: string): string {
+  return value.charAt(0).toLowerCase() + value.slice(1);
+}
+
+function featureForTable(tableName: string, features?: string[] | null): string | null {
+  if (!features || features.length === 0) return null;
+  const t = slugify(tableName);
+  const tSingular = slugify(singularize(tableName));
+  for (const feature of features) {
+    const f = slugify(feature);
+    if (!f) continue;
+    const fSingular = slugify(singularize(f));
+    if (f === t || f === tSingular || fSingular === t || fSingular === tSingular) return f;
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Type mapping (PostgreSQL/Supabase types → Dart)
+// ─────────────────────────────────────────────────────────────────────────
+
+function scalarDartType(t: string): string {
+  const s = t.toLowerCase().trim();
+  if (/^(bigint|int8|integer|int|int4|int2|smallint|serial|bigserial|smallserial|oid)/.test(s)) return 'int';
+  if (s === 'double precision') return 'double';
+  if (/^(numeric|decimal|real|double|float|money)/.test(s)) return 'double';
+  if (/^(bool|boolean)/.test(s)) return 'bool';
+  if (/timestamp|timestamptz|datetime/.test(s)) return 'DateTime';
+  if (s === 'date' || s === 'time' || s.startsWith('timetz')) return 'DateTime';
+  if (/^(json|jsonb)/.test(s) || s.includes('json')) return 'Map<String, dynamic>';
+  if (/^(uuid|text|varchar|char|character|name|citext|bpchar|inet|cidr|macaddr|bytea|xml)/.test(s)) return 'String';
+  if (s.includes('bool')) return 'bool';
+  if (s.includes('int') || s.includes('serial')) return 'int';
+  if (/numeric|decimal|double|float|real|money/.test(s)) return 'double';
+  if (s.includes('text') || s.includes('char') || s.includes('string') || s.includes('uuid')) return 'String';
+  return 'String';
+}
+
+function dartTypeForColumn(typeRaw: string | undefined): string {
+  const raw = String(typeRaw ?? 'text').trim();
+  const lower = raw.toLowerCase();
+  let base = lower;
+  let isArray = false;
+  if (lower.endsWith('[]')) {
+    isArray = true;
+    base = lower.slice(0, -2);
+  } else if (lower.endsWith(' array')) {
+    isArray = true;
+    base = lower.slice(0, -' array'.length).trim();
+  } else if (lower.startsWith('_') && lower.length > 1) {
+    isArray = true;
+    base = lower.slice(1);
+  }
+  const scalar = scalarDartType(base);
+  return isArray ? `List<${scalar}>` : scalar;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Model specs (same derivation the data-models agent uses)
+// ─────────────────────────────────────────────────────────────────────────
+
+interface ModelField {
+  column: TableColumn;
+  field: string;
+  dartBase: string;
+  nullable: boolean;
+  defaultLiteral?: string;
+  required: boolean;
+}
+
+interface ModelSpec {
+  table: string;
+  className: string;
+  fileBase: string;
+  path: string;
+  feature: string | null;
+  fields: ModelField[];
+}
+
+function sqlLiteralToDart(dartBase: string, rawDefault: unknown): string | undefined {
+  const v = String(rawDefault ?? '').trim();
+  if (!v) return undefined;
+  const single = v.replace(/^'(.*)'$/s, '$1').replace(/''/g, "'");
+  const double = v.replace(/^"(.*)"$/s, '$1').replace(/""/g, '"');
+  switch (dartBase) {
+    case 'bool':
+      if (/^(true|'true')$/i.test(v)) return 'true';
+      if (/^(false|'false')$/i.test(v)) return 'false';
+      if (/^'(t|f)'$/i.test(v)) return /t/i.test(v) ? 'true' : 'false';
+      if (v === '0' || v === '1') return v === '1' ? 'true' : 'false';
+      return undefined;
+    case 'int':
+      return /^-?\d+$/.test(v) ? v : undefined;
+    case 'double': {
+      if (!/^-?\d+(\.\d+)?$/.test(v)) return undefined;
+      return v.includes('.') ? v : `${v}.0`;
+    }
+    case 'String':
+      if (/^'(.*)'$/s.test(v)) return dartStringLiteral(single);
+      if (/^"(.*)"$/s.test(v)) return dartStringLiteral(double);
+      return undefined;
+    case 'Map<String, dynamic>':
+      if (/^\{.*\}$/s.test(v) || /^'\{.*\}'$/s.test(v)) return 'const <String, dynamic>{}';
+      return undefined;
+    default:
+      if (dartBase.startsWith('List<')) return `const <${dartBase.slice('List<'.length, -1)}>[]`;
+      return undefined;
+  }
+}
+
+function zeroLiteral(dartBase: string): string | undefined {
+  switch (dartBase) {
+    case 'int': return '0';
+    case 'double': return '0.0';
+    case 'bool': return 'false';
+    case 'Map<String, dynamic>': return 'const <String, dynamic>{}';
+    default:
+      if (dartBase.startsWith('List<')) return `const <${dartBase.slice('List<'.length, -1)}>[]`;
+      return undefined;
+  }
+}
+
+function dartStringLiteral(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\$/g, '\\$')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+  return `'${escaped}'`;
+}
+
+const DART_KEYWORDS = new Set([
+  'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch', 'class',
+  'const', 'continue', 'covariant', 'default', 'deferred', 'do', 'dynamic', 'else',
+  'enum', 'export', 'extends', 'extension', 'external', 'factory', 'false', 'final',
+  'finally', 'for', 'function', 'get', 'hide', 'if', 'implements', 'import', 'in',
+  'interface', 'is', 'late', 'mixin', 'new', 'null', 'on', 'operator', 'part',
+  'required', 'rethrow', 'return', 'set', 'show', 'static', 'super', 'switch',
+  'sync', 'this', 'throw', 'true', 'try', 'typedef', 'var', 'void', 'while', 'with',
+]);
+
+function camelCase(raw: string): string {
+  const parts = String(raw).split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (parts.length === 0) return 'value';
+  const [head, ...rest] = parts;
+  let camel = head.charAt(0).toLowerCase() + head.slice(1);
+  for (const part of rest) {
+    camel += part.charAt(0).toUpperCase() + part.slice(1);
+  }
+  if (/^[0-9]/.test(camel)) camel = `n${camel.charAt(0).toUpperCase()}${camel.slice(1)}`;
+  if (DART_KEYWORDS.has(camel)) camel = `${camel}Value`;
+  return camel;
+}
+
+function buildModelSpecs(tables: TableDefinition[], features?: string[] | null): ModelSpec[] {
+  const specs: ModelSpec[] = [];
+  const usedClasses = new Set<string>();
+  const usedPaths = new Set<string>();
+
+  tables.forEach((table, index) => {
+    const rawTableName = String(table?.name ?? '').trim();
+    if (!rawTableName) return;
+
+    let base = toPascalCase(singularize(rawTableName));
+    if (base.endsWith('Model')) base = base.slice(0, -'Model'.length) || 'Record';
+    let className = `${base}Model`;
+    if (usedClasses.has(className)) {
+      className = `${toPascalCase(rawTableName)}Model`;
+      if (usedClasses.has(className)) className = `${toPascalCase(rawTableName)}${index + 1}Model`;
+    }
+    usedClasses.add(className);
+
+    const fileBase = toSnakeCase(className.slice(0, -'Model'.length)) || `table_${index + 1}`;
+    const feature = featureForTable(rawTableName, features);
+    let path = feature
+      ? `lib/features/${feature}/data/models/${fileBase}_model.dart`
+      : `lib/core/data/models/${fileBase}_model.dart`;
+    if (usedPaths.has(path)) {
+      let suffix = 2;
+      while (usedPaths.has(path.replace(/_model\.dart$/, `_${suffix}_model.dart`))) suffix += 1;
+      path = path.replace(/_model\.dart$/, `_${suffix}_model.dart`);
+    }
+    usedPaths.add(path);
+
+    const fields: ModelField[] = [];
+    const usedFields = new Set<string>();
+    const columns = Array.isArray(table.columns) ? table.columns : [];
+    for (const [colIndex, column] of columns.entries()) {
+      const colName = String(column?.name ?? '').trim();
+      if (!colName) continue;
+      let field = camelCase(colName);
+      if (usedFields.has(field)) field = `${field}${colIndex + 1}`;
+      usedFields.add(field);
+
+      const dartBase = dartTypeForColumn(column?.type);
+      const nullable = column?.isNullable === true;
+      const rawDefault = column?.defaultValue;
+      const hasDefault = rawDefault !== undefined && String(rawDefault).trim() !== '';
+      let defaultLiteral = hasDefault ? sqlLiteralToDart(dartBase, rawDefault) : undefined;
+      if (hasDefault && defaultLiteral === undefined) {
+        defaultLiteral = zeroLiteral(dartBase);
+      }
+      const required = !nullable && defaultLiteral === undefined;
+      fields.push({
+        column: { ...column, name: colName, type: String(column?.type ?? 'text') },
+        field,
+        dartBase,
+        nullable,
+        defaultLiteral,
+        required,
+      });
+    }
+    if (fields.length === 0) {
+      fields.push({
+        column: { name: 'id', type: 'text' },
+        field: 'id',
+        dartBase: 'String',
+        nullable: false,
+        required: true,
+      });
+    }
+
+    specs.push({ table: rawTableName, className, fileBase, path, feature, fields });
+  });
+
+  return specs;
+}
+
+/**
+ * Collect the model specs this pipeline works with: schema-derived when a
+ * dataSchema exists, otherwise discovered from `_modelFiles` / generatedFiles.
+ */
+function collectModelSpecs(
+  state: ProjectState,
+  tables: TableDefinition[],
+  features?: string[] | null
+): ModelSpec[] {
+  if (tables.length > 0) return buildModelSpecs(tables, features);
+
+  const declared = Array.isArray(state._modelFiles) ? (state._modelFiles as string[]) : [];
+  const discovered = [
+    ...new Set(
+      [...declared, ...[...(state.generatedFiles?.keys() ?? [])].filter((k) => /\/models\/[^/]+\.dart$/.test(k))]
+    ),
+  ].sort();
+
+  return discovered.map((path) => {
+    const base = path.split('/').pop()?.replace(/\.dart$/, '').replace(/_model$/, '') ?? 'record';
+    const className = `${toPascalCase(base)}Model`;
+    return {
+      table: base,
+      className,
+      fileBase: toSnakeCase(base) || 'record',
+      path,
+      feature: null,
+      fields: [],
+    };
+  });
+}
+
+function providerPathForModel(modelPath: string): string {
+  const match = modelPath.match(/^lib\/(features\/[^/]+|core)\/data\/models\/([^/]+)\.dart$/);
+  if (match) {
+    const [, scope, file] = match;
+    const base = file.replace(/_model$/, '');
+    return `lib/${scope}/providers/${base}_provider.dart`;
+  }
+  const base = modelPath.split('/').pop()?.replace(/\.dart$/, '').replace(/_model$/, '') ?? 'model';
+  return `lib/core/providers/${base}_provider.dart`;
+}
+
+function findSpecForProviderPath(
+  specs: ModelSpec[],
+  path: string,
+  content: string
+): ModelSpec | undefined {
+  const byPath = specs.find((s) => providerPathForModel(s.path) === path);
+  if (byPath) return byPath;
+  return specs.find((s) => content.includes(s.className));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Deterministic provider synthesis
+// ─────────────────────────────────────────────────────────────────────────
+
+function seedValueFor(field: ModelField, index: number): string {
+  const i = index + 1;
+  const name = field.field.toLowerCase();
+  const base = field.dartBase;
+  if (base === 'DateTime') return `'2026-02-${String(i).padStart(2, '0')}T09:30:00.000Z'`;
+  if (base === 'bool') return i % 2 === 0 ? 'false' : 'true';
+  if (base === 'int') {
+    if (field.column.isPrimary || name === 'id') return `${100000000 + i * 7}`;
+    return `${(i + 1) * 7}`;
+  }
+  if (base === 'double') return (((i + 1) * 19.5)).toFixed(1);
+  if (base === 'Map<String, dynamic>') return '<String, dynamic>{}';
+  if (base.startsWith('List<')) {
+    const elem = base.slice('List<'.length, -1);
+    if (elem === 'String') return `<String>['sample-${i}']`;
+    if (elem === 'int') return `<int>[${i}]`;
+    if (elem === 'double') return `<double>[${i}.0]`;
+    if (elem === 'bool') return `<bool>[true]`;
+    return `<${elem}>[]`;
+  }
+  if (field.column.isPrimary || name === 'id' || name.endsWith('id')) return `'00000000-0000-4000-8000-00000000000${i}'`;
+  if (name.includes('email')) return `'sample${i}@example.com'`;
+  if (name.includes('url') || name.includes('avatar') || name.includes('image')) return `'https://example.com/asset-${i}.png'`;
+  if (name.includes('status')) return `'active'`;
+  if (name.includes('color') || name.includes('colour')) return `'#2563EB'`;
+  if (name.includes('priority')) return `'medium'`;
+  if (name.includes('phone')) return `'+15555550${String(i).padStart(2, '0')}'`;
+  if (name.includes('description') || name.includes('body') || name.includes('content') || name.includes('notes')) return `'Sample notes ${i}'`;
+  if (name.includes('title') || name.endsWith('name') || name === 'name') return `'Sample ${i}'`;
+  return `'Sample ${field.column.name} ${i}'`;
+}
+
+function seedJsonFor(spec: ModelSpec, index: number): string {
+  const entries = spec.fields.map((field) => `'${field.column.name}': ${seedValueFor(field, index)},`);
+  return `const <String, dynamic>{\n        ${entries.join('\n        ')}\n      }`;
+}
+
+function seedListFor(spec: ModelSpec): string {
+  if (spec.fields.length === 0) return 'const []';
+  const seeds = [seedJsonFor(spec, 0), seedJsonFor(spec, 1)];
+  return `[\n      ${spec.className}.fromJson(${seeds.join(`),\n      ${spec.className}.fromJson(`)}),\n    ]`;
+}
+
+function keyFieldFor(spec: ModelSpec): ModelField | null {
+  return (
+    spec.fields.find((f) => f.column.isPrimary) ??
+    spec.fields.find((f) => f.field === 'id') ??
+    spec.fields.find((f) => f.dartBase === 'String' || f.dartBase === 'int') ??
+    spec.fields[0] ??
+    null
+  );
+}
+
+function matchExpression(existing: string, item: string, keyField: ModelField | null): string {
+  if (keyField) return `${existing}.${keyField.field} == ${item}.${keyField.field}`;
+  return `identical(${existing}, ${item}) || ${existing} == ${item}`;
+}
+
+function keyParamType(keyField: ModelField | null): string {
+  return keyField?.dartBase ?? 'String';
+}
+
+function canSeedFromJson(spec: ModelSpec): boolean {
+  return spec.fields.length > 0;
+}
+
+function stateClassSource(className: string, modelParam: string): string[] {
+  return [
+    `class ${className}State {`,
+    `  const ${className}State({this.items = const [], this.isLoading = false, this.error});`,
+    ``,
+    `  final List<${modelParam}> items;`,
+    `  final bool isLoading;`,
+    `  final String? error;`,
+    ``,
+    `  ${className}State copyWith({List<${modelParam}>? items, bool? isLoading, String? error, bool clearError = false}) =>`,
+    `      ${className}State(`,
+    `        items: items ?? this.items,`,
+    `        isLoading: isLoading ?? this.isLoading,`,
+    `        error: clearError ? null : (error ?? this.error),`,
+    `      );`,
+    `}`,
+  ];
+}
+
+function synthesizeChangeNotifier(spec: ModelSpec, pkg: string, packages: Record<string, string>): string {
+  const className = spec.className;
+  const keyField = keyFieldFor(spec);
+  const keyType = keyParamType(keyField);
+  const matchExpr = matchExpression('existing', 'item', keyField);
+  const modelUri = `package:${pkg}/${spec.path.replace(/^lib\//, '')}`;
+  const hasProviderPkg = Boolean(packages['provider']);
+  const seedLiteral = canSeedFromJson(spec) ? seedListFor(spec) : 'const []';
+
+  const lines: string[] = [
+    `import 'package:flutter/foundation.dart';`,
+    ...(hasProviderPkg ? [`import 'package:provider/provider.dart';`] : []),
+    `import '${modelUri}';`,
+    ``,
+    `enum ${className}ViewState { initial, loading, loaded, error }`,
+    ``,
+    `/// State controller for [${className}]. Loads, creates, updates and deletes [${className}] items.`,
+    `class ${className}Provider extends ChangeNotifier {`,
+    `  ${className}ViewState _state = ${className}ViewState.initial;`,
+    `  List<${className}> _items = const [];`,
+    `  String? _error;`,
+    ``,
+    `  ${className}ViewState get state => _state;`,
+    `  List<${className}> get items => List<${className}>.unmodifiable(_items);`,
+    `  String? get error => _error;`,
+    `  bool get isLoading => _state == ${className}ViewState.loading;`,
+    ``,
+    `  Future<void> load() async {`,
+    `    _state = ${className}ViewState.loading;`,
+    `    _error = null;`,
+    `    notifyListeners();`,
+    `    try {`,
+    `      await Future<void>.delayed(const Duration(milliseconds: 250));`,
+    `      _items = _seed();`,
+    `      _state = ${className}ViewState.loaded;`,
+    `    } catch (err) {`,
+    `      _error = err.toString();`,
+    `      _state = ${className}ViewState.error;`,
+    `    }`,
+    `    notifyListeners();`,
+    `  }`,
+    ``,
+    `  Future<void> refresh() => load();`,
+    ``,
+    `  Future<void> create(${className} item) async {`,
+    `    _items = [..._items, item];`,
+    `    _state = ${className}ViewState.loaded;`,
+    `    notifyListeners();`,
+    `  }`,
+    ``,
+    `  Future<void> update(${className} item) async {`,
+    `    _items = [for (final existing in _items) ${matchExpr} ? item : existing];`,
+    `    notifyListeners();`,
+    `  }`,
+    ``,
+  ];
+
+  if (keyField) {
+    lines.push(`  Future<void> delete(${keyType} id) async {`);
+    lines.push(`    _items = _items.where((existing) => existing.${keyField.field} != id).toList();`);
+    lines.push(`    notifyListeners();`);
+    lines.push(`  }`);
+  } else {
+    lines.push(`  Future<void> remove(${className} item) async {`);
+    lines.push(`    _items = _items.where((existing) => existing != item).toList();`);
+    lines.push(`    notifyListeners();`);
+    lines.push(`  }`);
+  }
+
+  lines.push(``);
+  lines.push(`  List<${className}> _seed() {`);
+  lines.push(`    return ${seedLiteral};`);
+  lines.push(`  }`);
+  lines.push(`}`);
+
+  if (hasProviderPkg) {
+    lines.push(``);
+    lines.push(`/// package:provider wiring for [${className}Provider].`);
+    lines.push(`final ChangeNotifierProvider<${className}Provider> ${lowerFirst(className)}Provider =`);
+    lines.push(`    ChangeNotifierProvider<${className}Provider>(create: (_) => ${className}Provider()..load());`);
+  }
+  lines.push(``);
+  return lines.join('\n');
+}
+
+function synthesizeRiverpodNotifier(spec: ModelSpec, pkg: string, packages: Record<string, string>): string {
+  const className = spec.className;
+  const keyField = keyFieldFor(spec);
+  const keyType = keyParamType(keyField);
+  const matchExpr = matchExpression('existing', 'item', keyField);
+  const modelUri = `package:${pkg}/${spec.path.replace(/^lib\//, '')}`;
+  const importPkg = packages['flutter_riverpod'] ? 'flutter_riverpod' : 'riverpod';
+  const seedLiteral = canSeedFromJson(spec) ? seedListFor(spec) : 'const []';
+
+  const lines: string[] = [
+    `import 'package:${importPkg}/${importPkg}.dart';`,
+    `import '${modelUri}';`,
+    ``,
+    ...stateClassSource(className, className),
+    ``,
+    `/// 3.x-style StateNotifier for [${className}].`,
+    `class ${className}Notifier extends StateNotifier<${className}State> {`,
+    `  ${className}Notifier() : super(const ${className}State()) {`,
+    `    load();`,
+    `  }`,
+    ``,
+    `  Future<void> load() async {`,
+    `    state = state.copyWith(isLoading: true, clearError: true);`,
+    `    try {`,
+    `      await Future<void>.delayed(const Duration(milliseconds: 250));`,
+    `      state = state.copyWith(isLoading: false, items: _seed());`,
+    `    } catch (err) {`,
+    `      state = state.copyWith(isLoading: false, error: err.toString());`,
+    `    }`,
+    `  }`,
+    ``,
+    `  Future<void> refresh() => load();`,
+    ``,
+    `  void create(${className} item) {`,
+    `    state = state.copyWith(items: [...state.items, item]);`,
+    `  }`,
+    ``,
+    `  void updateItem(${className} item) {`,
+    `    state = state.copyWith(items: [for (final existing in state.items) ${matchExpr} ? item : existing]);`,
+    `  }`,
+    ``,
+  ];
+
+  if (keyField) {
+    lines.push(`  void removeItem(${keyType} id) {`);
+    lines.push(`    state = state.copyWith(items: state.items.where((existing) => existing.${keyField.field} != id).toList());`);
+    lines.push(`  }`);
+  } else {
+    lines.push(`  void removeItem(${className} item) {`);
+    lines.push(`    state = state.copyWith(items: state.items.where((existing) => existing != item).toList());`);
+    lines.push(`  }`);
+  }
+
+  lines.push(``);
+  lines.push(`  List<${className}> _seed() {`);
+  lines.push(`    return ${seedLiteral};`);
+  lines.push(`  }`);
+  lines.push(`}`);
+  lines.push(``);
+  lines.push(`final ${lowerFirst(className)}Provider = StateNotifierProvider<${className}Notifier, ${className}State>((ref) => ${className}Notifier());`);
+  lines.push(``);
+  return lines.join('\n');
+}
+
+function synthesizeBlocCubit(spec: ModelSpec, pkg: string, packages: Record<string, string>): string {
+  const className = spec.className;
+  const keyField = keyFieldFor(spec);
+  const keyType = keyParamType(keyField);
+  const matchExpr = matchExpression('existing', 'item', keyField);
+  const modelUri = `package:${pkg}/${spec.path.replace(/^lib\//, '')}`;
+  const importPkg = packages['flutter_bloc'] ? 'flutter_bloc' : 'bloc';
+  const seedLiteral = canSeedFromJson(spec) ? seedListFor(spec) : 'const []';
+
+  const lines: string[] = [
+    `import 'package:${importPkg}/${importPkg}.dart';`,
+    `import '${modelUri}';`,
+    ``,
+    ...stateClassSource(className, className),
+    ``,
+    `/// Cubit for [${className}]. Pure business logic — pair with BlocBuilder/BlocConsumer at the call site.`,
+    `class ${className}Cubit extends Cubit<${className}State> {`,
+    `  ${className}Cubit() : super(const ${className}State()) {`,
+    `    load();`,
+    `  }`,
+    ``,
+    `  Future<void> load() async {`,
+    `    emit(state.copyWith(isLoading: true, clearError: true));`,
+    `    try {`,
+    `      await Future<void>.delayed(const Duration(milliseconds: 250));`,
+    `      emit(state.copyWith(isLoading: false, items: _seed()));`,
+    `    } catch (err) {`,
+    `      emit(state.copyWith(isLoading: false, error: err.toString()));`,
+    `    }`,
+    `  }`,
+    ``,
+    `  Future<void> refresh() => load();`,
+    ``,
+    `  Future<void> create(${className} item) async {`,
+    `    emit(state.copyWith(items: [...state.items, item]));`,
+    `  }`,
+    ``,
+    `  Future<void> updateItem(${className} item) async {`,
+    `    emit(state.copyWith(items: [for (final existing in state.items) ${matchExpr} ? item : existing]));`,
+    `  }`,
+    ``,
+  ];
+
+  if (keyField) {
+    lines.push(`  Future<void> removeItem(${keyType} id) async {`);
+    lines.push(`    emit(state.copyWith(items: state.items.where((existing) => existing.${keyField.field} != id).toList()));`);
+    lines.push(`  }`);
+  } else {
+    lines.push(`  Future<void> removeItem(${className} item) async {`);
+    lines.push(`    emit(state.copyWith(items: state.items.where((existing) => existing != item).toList()));`);
+    lines.push(`  }`);
+  }
+
+  lines.push(``);
+  lines.push(`  List<${className}> _seed() {`);
+  lines.push(`    return ${seedLiteral};`);
+  lines.push(`  }`);
+  lines.push(`}`);
+  lines.push(``);
+  return lines.join('\n');
+}
+
+function synthesizeProviderContent(
+  spec: ModelSpec,
+  pkg: string,
+  stateManagement: 'provider' | 'riverpod' | 'bloc',
+  packages: Record<string, string>
+): string {
+  if (stateManagement === 'riverpod') return synthesizeRiverpodNotifier(spec, pkg, packages);
+  if (stateManagement === 'bloc') return synthesizeBlocCubit(spec, pkg, packages);
+  return synthesizeChangeNotifier(spec, pkg, packages);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Output validation & hygiene
+// ─────────────────────────────────────────────────────────────────────────
+
+function stripCommentsOnly(src: string): string {
+  let out = src;
+  let prev = out;
+  do {
+    prev = out;
+    out = out.replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length));
+  } while (out !== prev);
+  return out.replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+}
+
+function stripCommentsAndStrings(src: string): string {
+  return stripCommentsOnly(src).replace(
+    /r?'''[\s\S]*?'''|r?"""[\s\S]*?"""|r?'(?:\\.|[^'\\\n])*'|r?"(?:\\.|[^"\\\n])*"/g,
+    (m) => ' '.repeat(m.length)
+  );
+}
+
+function hasUnterminatedString(src: string): boolean {
+  const s = stripCommentsOnly(src);
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch !== "'" && ch !== '"') {
+      i += 1;
+      continue;
+    }
+    const triple = s.startsWith(ch.repeat(3), i);
+    const quote = triple ? ch.repeat(3) : ch;
+    let j = i + quote.length;
+    let closed = false;
+    while (j < s.length) {
+      const cj = s[j];
+      if (!triple && cj === '\\') {
+        j += 2;
+        continue;
+      }
+      if (s.startsWith(quote, j)) {
+        closed = true;
+        j += quote.length;
+        break;
+      }
+      if (!triple && (cj === '\n' || cj === '\r')) break;
+      j += 1;
+    }
+    if (!closed) return true;
+    i = j;
+  }
+  return false;
+}
+
+function validateDartSource(content: string): { ok: boolean; reason: string } {
+  if (!content || content.trim().length < 20) return { ok: false, reason: 'empty output' };
+  if (/\b(TODO|FIXME|XXX)\b/.test(content)) return { ok: false, reason: 'contains a TODO marker' };
+  if (content.includes('UnimplementedError')) return { ok: false, reason: 'contains UnimplementedError' };
+  if (/^\s*part\s+of\b/m.test(content)) return { ok: false, reason: 'contains a `part of` directive' };
+  if (hasUnterminatedString(content)) return { ok: false, reason: 'unterminated string literal' };
+
+  const stripped = stripCommentsAndStrings(content);
+  let braces = 0;
+  let parens = 0;
+  let brackets = 0;
+  for (const ch of stripped) {
+    if (ch === '{') braces += 1;
+    else if (ch === '}') {
+      braces -= 1;
+      if (braces < 0) return { ok: false, reason: 'unbalanced braces' };
+    } else if (ch === '(') parens += 1;
+    else if (ch === ')') {
+      parens -= 1;
+      if (parens < 0) return { ok: false, reason: 'unbalanced parentheses' };
+    } else if (ch === '[') brackets += 1;
+    else if (ch === ']') {
+      brackets -= 1;
+      if (brackets < 0) return { ok: false, reason: 'unbalanced brackets' };
+    }
+  }
+  if (braces !== 0 || parens !== 0 || brackets !== 0) {
+    return { ok: false, reason: `unbalanced delimiters (braces ${braces}, parens ${parens}, brackets ${brackets})` };
+  }
+  return { ok: true, reason: 'ok' };
+}
+
+function isValidGeneratedPath(path: string): boolean {
+  return (
+    /^lib\/[A-Za-z0-9_.\-/]+\.dart$/.test(path) &&
+    !path.includes('..') &&
+    !path.includes('//') &&
+    !/\s/.test(path)
+  );
+}
+
+function normalizePosix(value: string): string {
+  const out: string[] = [];
+  for (const part of value.replaceAll('\\', '/').split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  return out.join('/');
+}
+
+/** Import/export URIs in `content` that do not resolve against `candidates`. */
+function unresolvedImports(
+  content: string,
+  filePath: string,
+  candidates: Set<string>,
+  pkg: string
+): string[] {
+  const missing: string[] = [];
+  const re = /(?:import|export)\s+['"]([^'"]+)['"]/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    const uri = match[1];
+    if (uri.startsWith('dart:')) continue;
+    if (uri.startsWith(`package:${pkg}/`)) {
+      const target = `lib/${uri.slice(`package:${pkg}/`.length)}`;
+      if (!candidates.has(target)) missing.push(uri);
+      continue;
+    }
+    if (uri.startsWith('package:')) continue; // external dependency — assumed installed
+    const dir = filePath.split('/').slice(0, -1).join('/');
+    const resolved = normalizePosix(`${dir}/${uri}`);
+    if (candidates.has(resolved)) continue;
+    if (!resolved.endsWith('.dart') && candidates.has(`${resolved}.dart`)) continue;
+    if (candidates.has(`${resolved}/index.dart`)) continue;
+    missing.push(uri);
+  }
+  return missing;
+}
+
+function putGeneratedFile(
+  files: Map<string, GeneratedFile>,
+  path: string,
+  language: string,
+  content: string
+): 'created' | 'modified' | 'kept' {
+  const existing = files.get(path);
+  if (existing && existing.content === content) return 'kept';
+  files.set(path, {
+    path,
+    content,
+    action: existing ? 'modified' : 'created',
+    language,
+  });
+  return existing ? 'modified' : 'created';
+}
+
+function sortFiles(files: Map<string, GeneratedFile>): Map<string, GeneratedFile> {
+  return new Map([...files.entries()].sort(([a], [b]) => (a === b ? 0 : a < b ? -1 : 1)));
 }
 
 function generateThemeFallback(appName: string, primaryHex: string, font: string, radius: number, darkPreferred: boolean): string {
@@ -482,7 +1458,7 @@ class AppTheme {
         scrolledUnderElevation: 1,
         centerTitle: false,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_radius),
@@ -505,7 +1481,7 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(_radius)),
         filled: true,
-        fillColor: cs.surfaceContainerHighest.withOpacity(0.5),
+        fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.5),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       navigationBarTheme: NavigationBarThemeData(

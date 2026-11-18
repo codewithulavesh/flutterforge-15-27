@@ -106,12 +106,26 @@ function normalizeSeverity(value: unknown): 'error' | 'warning' | 'info' {
   return 'error';
 }
 
+function workspaceRelativePath(rawFile: string, workspace: string): string {
+  if (!rawFile) return '';
+  if (!path.isAbsolute(rawFile)) return rawFile.replaceAll('\\', '/');
+  let relative = path.relative(workspace, rawFile);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    // macOS /var → /private/var (and similar symlinked temp roots) make a
+    // literal relative() cross trees. Resolve both sides before giving up.
+    try {
+      relative = path.relative(fsSync.realpathSync(workspace), rawFile);
+    } catch {
+      // workspace may not exist anymore; keep the literal result
+    }
+  }
+  return relative.split(path.sep).join('/');
+}
+
 function toDiagnostic(entry: Record<string, any>, workspace: string): Diagnostic {
   const location = entry.location ?? entry.range?.start ?? {};
   const rawFile = entry.file ?? location.file ?? entry.path ?? '';
-  const filePath = rawFile
-    ? (path.isAbsolute(rawFile) ? path.relative(workspace, rawFile) : rawFile).split(path.sep).join('/')
-    : '';
+  const filePath = workspaceRelativePath(String(rawFile || ''), workspace);
   return {
     filePath,
     line: Number(entry.line ?? location.line ?? 0) || 0,
@@ -223,6 +237,28 @@ export async function analyzeProject(workspace: string, options: { flutterBin?: 
     timeoutMs: options.timeoutMs ?? ANALYZE_TIMEOUT_MS,
   });
   const diagnostics = parseDiagnostics(`${result.stdout}\n${result.stderr}`, workspace);
+
+  // An analyzer that crashes or prints unparseable output must never be
+  // mistaken for a clean project. Without this, a non-zero exit with no JSON
+  // diagnostics produced "Compile gate passed" and marked broken code verified.
+  if (!result.timedOut && result.code !== 0 && !diagnostics.some((item) => item.severity === 'error')) {
+    const detail = (result.stderr || result.stdout)
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-6)
+      .join(' ');
+    diagnostics.push({
+      filePath: '',
+      line: 0,
+      column: 0,
+      severity: 'error',
+      code: 'ANALYZER_EXIT',
+      message: `dart analyze exited with code ${result.code ?? 'unknown'}${detail ? `: ${detail}` : ' without diagnostics'}`,
+      correction: '',
+    });
+  }
+
   const errorCount = diagnostics.filter((item) => item.severity === 'error').length;
   const warningCount = diagnostics.filter((item) => item.severity === 'warning').length;
   const summary = result.timedOut

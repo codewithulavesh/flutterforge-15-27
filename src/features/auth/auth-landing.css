@@ -1,0 +1,193 @@
+@font-face {
+  font-family: 'Lime Panchang';
+  src: url('/landing-v2/panchang-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Panchang';
+  src: url('/landing-v2/panchang-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Panchang';
+  src: url('/landing-v2/panchang-800.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Satoshi';
+  src: url('/landing-v2/satoshi-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lime Satoshi';
+  src: url('/landing-v2/satoshi-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+.ff-auth-page {
+  --lv-lime: #c5fa75;
+  --lv-ink: #00101e;
+  --lv-text: #2f4858;
+  --lv-white: #f8fff8;
+  --lv-metal: #748ea0;
+  --lv-display: 'Lime Panchang', sans-serif;
+  --lv-body: 'Lime Satoshi', sans-serif;
+  --lv-line: rgba(0, 16, 30, 0.12);
+  --lv-soft: rgba(0, 16, 30, 0.04);
+  background: var(--lv-lime);
+  color: var(--lv-ink);
+  font-family: var(--lv-body);
+  font-size: 16px;
+  line-height: 1.5;
+  min-height: 100dvh;
+  overflow-x: clip;
+  isolation: isolate;
+  color-scheme: light;
+}
+
+.ff-auth-page *,
+.ff-auth-page *::before,
+.ff-auth-page *::after {
+  box-sizing: border-box;
+}
+
+.ff-auth-page ::selection {
+  background: var(--lv-ink);
+  color: var(--lv-lime);
+}
+
+.ff-auth-display {
+  font-family: var(--lv-display);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+}
+
+/* Metallic gradient text as seen on the landing page FLUTTERFORGE wordmark */
+.ff-auth-brand-wordmark,
+.ff-auth-poster-headline {
+  background: linear-gradient(119deg, var(--lv-ink) 53%, var(--lv-metal) 70%, var(--lv-text) 82%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Box colour: Deep ink & metallic background matching the pricing/plan boxes */
+.ff-auth-card {
+  background-color: var(--lv-ink);
+  background: linear-gradient(124deg, var(--lv-ink) 8%, var(--lv-text) 19%, var(--lv-ink) 30%, var(--lv-ink) 75%, var(--lv-text) 88%, var(--lv-ink) 100%);
+  color: var(--lv-white);
+  border: 1px solid rgba(248, 255, 248, 0.14);
+  border-radius: clamp(32px, 3.8vw, 48px);
+  box-shadow: 0 32px 80px -20px rgba(0, 16, 30, 0.52);
+  overflow: hidden;
+}
+
+.ff-auth-input-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--lv-body);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--lv-white);
+}
+
+.ff-auth-input {
+  width: 100%;
+  height: 52px;
+  padding: 0 20px 0 46px;
+  border-radius: 100px;
+  border: 1.5px solid rgba(248, 255, 248, 0.16);
+  background: rgba(248, 255, 248, 0.06);
+  backdrop-filter: blur(8px);
+  font-family: var(--lv-body);
+  font-size: 15px;
+  color: var(--lv-white);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  outline: none;
+}
+
+.ff-auth-input:focus {
+  border-color: var(--lv-lime);
+  background: rgba(248, 255, 248, 0.1);
+  box-shadow: 0 0 0 3px rgba(197, 250, 117, 0.22);
+}
+
+.ff-auth-input::placeholder {
+  color: rgba(248, 255, 248, 0.4);
+}
+
+/* Pill outline button matching START FREE / CHOOSE PRO button in image 2 */
+.ff-auth-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  height: 54px;
+  padding: 0 28px;
+  border-radius: 100px;
+  border: 1.5px solid var(--lv-white);
+  background: transparent;
+  color: var(--lv-white);
+  font-family: var(--lv-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ff-auth-btn-primary:hover:not(:disabled) {
+  background: var(--lv-lime);
+  border-color: var(--lv-lime);
+  color: var(--lv-ink);
+  box-shadow: 0 0 28px rgba(197, 250, 117, 0.45);
+  transform: translateY(-1px);
+}
+
+.ff-auth-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ff-auth-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ff-auth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 100px;
+  border: 1px solid var(--lv-line);
+  background: var(--lv-white);
+  font-family: var(--lv-display);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--lv-ink);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.ff-auth-pill:hover {
+  background: var(--lv-ink);
+  color: var(--lv-lime);
+  border-color: var(--lv-ink);
+}
+
+.ff-auth-pill.active {
+  background: var(--lv-ink);
+  color: var(--lv-lime);
+  border-color: var(--lv-ink);
+}

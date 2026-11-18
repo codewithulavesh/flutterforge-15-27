@@ -356,35 +356,35 @@ export function RunActivity({
       <MessageContent className="w-full">
         <div
           className={cn(
-            'overflow-hidden rounded-2xl border border-[var(--fb-line)] bg-[var(--fb-card)] shadow-[0_14px_40px_-30px_rgba(0,0,0,0.5)]',
+            'overflow-hidden rounded-2xl border border-[rgba(248,255,248,0.12)] bg-[linear-gradient(135deg,#001424_0%,#091d30_100%)] text-[#f8fff8] shadow-[0_14px_40px_-30px_rgba(0,0,0,0.8)]',
             page && 'rounded-[22px]',
           )}
         >
           {/* ── Agent identity row ─────────────────────────────────── */}
-          <div className="flex items-center gap-2.5 border-b border-[var(--fb-line)] px-3 py-2.5 sm:px-4">
-            <div className="relative grid size-8 shrink-0 place-items-center rounded-full bg-[var(--fb-ink)] text-[var(--fb-bg)]">
+          <div className="flex items-center gap-2.5 border-b border-[rgba(248,255,248,0.08)] bg-[rgba(248,255,248,0.02)] px-3 py-2.5 sm:px-4">
+            <div className="relative grid size-8 shrink-0 place-items-center rounded-full bg-[rgba(197,250,117,0.12)] border border-[rgba(197,250,117,0.30)] text-[#c5fa75]">
               <SparklesIcon className="size-4" />
               {running && (
                 <span className="absolute -right-0.5 -top-0.5 flex size-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex size-2.5 rounded-full border-2 border-[var(--fb-card)] bg-emerald-500" />
+                  <span className="relative inline-flex size-2.5 rounded-full border-2 border-[#001424] bg-emerald-500" />
                 </span>
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-semibold leading-tight text-[var(--fb-ink)]">
+              <p className="truncate text-[12px] font-semibold leading-tight text-[#f8fff8]">
                 FlutterForge Agent
               </p>
-              <p className="truncate font-mono text-[9px] tracking-[0.1em] text-[var(--fb-dim)]">
+              <p className="truncate font-mono text-[9px] tracking-[0.1em] text-[#748ea0]">
                 {shortModel(run?.model) ?? 'agent'}
               </p>
             </div>
             {running && (
-              <span className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[8.5px] font-semibold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-400">
+              <span className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-[8.5px] font-semibold uppercase tracking-[0.14em] text-emerald-400">
                 working
               </span>
             )}
-            <span className="shrink-0 rounded-full border border-[var(--fb-line)] px-2 py-0.5 font-mono text-[10px] tabular-nums text-[var(--fb-muted)]">
+            <span className="shrink-0 rounded-full border border-[rgba(248,255,248,0.12)] bg-[rgba(248,255,248,0.04)] px-2 py-0.5 font-mono text-[10px] tabular-nums text-[#748ea0]">
               {formatElapsed(elapsed * 1000)}
             </span>
           </div>
@@ -394,10 +394,10 @@ export function RunActivity({
             {isPipeline && (
               <div className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-muted)]">
+                  <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#748ea0]">
                     {running ? `Step ${currentStep} of ${totalSteps}` : `${totalSteps} steps complete`}
                   </span>
-                  <span className="truncate font-mono text-[9px] text-[var(--fb-dim)]">
+                  <span className="truncate font-mono text-[9px] text-[#748ea0]">
                     {humanizePhase(latestPhase)}
                   </span>
                 </div>
@@ -408,27 +408,27 @@ export function RunActivity({
 
             {/* ── Chat-style step feed ─────────────────────────────── */}
             {phases.length > 0 && (
-              <div className="overflow-hidden rounded-xl border border-[var(--fb-line)]">
+              <div className="overflow-hidden rounded-xl border border-[rgba(248,255,248,0.10)] bg-[rgba(0,16,30,0.50)]">
                 <button
                   type="button"
                   onClick={() => setShowAllSteps((value) => !value)}
-                  className="flex w-full items-center justify-between gap-2 border-b border-[var(--fb-line)] bg-[var(--fb-soft)] px-3 py-2 text-left transition-colors hover:bg-[var(--fb-soft)]/70"
+                  className="flex w-full items-center justify-between gap-2 border-b border-[rgba(248,255,248,0.08)] bg-[rgba(248,255,248,0.03)] px-3 py-2 text-left transition-colors hover:bg-[rgba(248,255,248,0.06)]"
                   aria-expanded={showAllSteps}
                 >
-                  <span className="flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--fb-muted)]">
-                    <ListChecksIcon className="size-3.5" />
+                  <span className="flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#748ea0]">
+                    <ListChecksIcon className="size-3.5 text-[#c5fa75]" />
                     Agent timeline · {phases.length} step{phases.length === 1 ? '' : 's'}
                     {files.length > 0 && (
-                      <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[8.5px] text-emerald-600 dark:text-emerald-400">
+                      <span className="rounded-full bg-emerald-500/15 border border-emerald-500/25 px-1.5 py-0.5 text-[8.5px] text-emerald-400">
                         {files.length} files
                       </span>
                     )}
                   </span>
-                  <ChevronDownIcon className={cn('size-3.5 text-[var(--fb-dim)] transition-transform duration-300', showAllSteps && 'rotate-180')} />
+                  <ChevronDownIcon className={cn('size-3.5 text-[#748ea0] transition-transform duration-300', showAllSteps && 'rotate-180')} />
                 </button>
-                <ol className="divide-y divide-[var(--fb-line)]/60">
+                <ol className="divide-y divide-[rgba(248,255,248,0.06)]">
                   {hiddenPhaseCount > 0 && (
-                    <li className="px-3 py-1.5 text-center font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--fb-dim)]">
+                    <li className="px-3 py-1.5 text-center font-mono text-[9px] uppercase tracking-[0.12em] text-[#748ea0]">
                       + {hiddenPhaseCount} earlier steps
                     </li>
                   )}
@@ -444,23 +444,23 @@ export function RunActivity({
                           {...bubbleEnter}
                           className={cn(
                             'flex items-start gap-2 px-3 py-2',
-                            active && 'bg-[var(--fb-soft)]/60',
+                            active && 'bg-[rgba(197,250,117,0.08)]',
                           )}
                         >
                           <span className="mt-0.5 grid size-5 shrink-0 place-items-center">
                             {active ? (
-                              <Loader2Icon className="size-3.5 animate-spin text-[var(--fb-ink)]" />
+                              <Loader2Icon className="size-3.5 animate-spin text-[#c5fa75]" />
                             ) : (
-                              <CheckCircle2Icon className="size-3.5 text-emerald-500" />
+                              <CheckCircle2Icon className="size-3.5 text-emerald-400" />
                             )}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className={cn('block text-[11.5px] leading-snug', active ? 'font-medium text-[var(--fb-ink)]' : 'text-[var(--fb-muted)]')}>
+                            <span className={cn('block text-[11.5px] leading-snug', active ? 'font-medium text-[#f8fff8]' : 'text-[rgba(248,255,248,0.70)]')}>
                               <span aria-hidden className="mr-1">{emoji}</span>
                               {phase.message}
                             </span>
                             {phase.step != null && (
-                              <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[var(--fb-dim)]">
+                              <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-[#748ea0]">
                                 Step {phase.step}{phase.totalSteps ? `/${phase.totalSteps}` : ''}
                               </span>
                             )}

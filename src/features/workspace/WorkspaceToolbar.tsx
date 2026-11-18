@@ -142,32 +142,32 @@ export function WorkspaceToolbar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 shrink-0 border-b border-[var(--fb-line)] bg-[var(--fb-bg)]/90 backdrop-blur-xl">
-      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-h-[60px] px-2 sm:px-3 py-2">
+    <header className="sticky top-0 z-30 shrink-0 border-b border-[rgba(248,255,248,0.10)] bg-[linear-gradient(180deg,#001525_0%,#00101e_100%)] backdrop-blur-xl shadow-[0_1px_0_rgba(248,255,248,0.07)]">
+      <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-h-[60px] px-3 sm:px-4 py-2">
 
         {/* ── Left: logo + project name ─────────────────────── */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             onClick={() => navigate('/dashboard')}
-            className="group flex items-center gap-2 rounded-full px-1.5 py-1 transition-colors hover:bg-[var(--fb-soft)]"
+            className="group flex items-center gap-2.5 rounded-[14px] px-2 py-1.5 transition-colors hover:bg-[rgba(248,255,248,0.07)]"
           >
-            <BrandLogo size={28} className="rounded-[8px] border border-[var(--fb-line)]" />
+            <BrandLogo size={28} className="rounded-[8px] border border-[rgba(248,255,248,0.14)]" />
             <div className="flex flex-col leading-none text-left">
-              <span className="max-w-24 truncate text-[12.5px] font-semibold text-[var(--fb-ink)] sm:max-w-32">
+              <span className="max-w-24 truncate text-[13px] font-semibold text-[#f8fff8] sm:max-w-36" style={{ fontFamily: "'Lime Panchang', sans-serif" }}>
                 {currentProject?.name ?? 'FlutterForge'}
               </span>
-              <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--fb-dim)]">Workspace</span>
+              <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[#748ea0]">Workspace</span>
             </div>
           </button>
 
           {/* Status chip */}
           {currentProject && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[var(--fb-line)] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--fb-muted)]">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[rgba(248,255,248,0.12)] bg-[rgba(248,255,248,0.05)] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#748ea0]">
               <span
                 aria-hidden
                 className={cn(
                   'h-1.5 w-1.5 rounded-full',
-                  currentProject.status === 'ready' ? 'bg-[var(--fb-lime)]' : 'bg-[var(--fb-dim)]',
+                  currentProject.status === 'ready' ? 'bg-[#c5fa75]' : 'bg-[#748ea0]',
                 )}
               />
               {currentProject.status ?? 'created'}
@@ -176,7 +176,7 @@ export function WorkspaceToolbar() {
 
           {/* Live code indicator */}
           {hasCode && (
-            <div className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[var(--fb-lime)] px-2.5 py-1 text-[10px] font-semibold text-black">
+            <div className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[rgba(197,250,117,0.15)] border border-[rgba(197,250,117,0.30)] px-2.5 py-1 text-[10px] font-semibold text-[#c5fa75]">
               <Zap size={10} />
               <span>{dartFileCount} files</span>
             </div>
@@ -198,14 +198,14 @@ export function WorkspaceToolbar() {
                   key={item.id}
                   onClick={() => item.id === 'dashboard' ? navigate('/dashboard') : setActiveView(item.id as typeof activeView)}
                   className={cn(
-                    'relative flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors shrink-0',
+                    'relative flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-all shrink-0',
                     isActive
-                      ? 'bg-[var(--fb-ink)] text-[var(--fb-bg)]'
-                      : 'text-[var(--fb-muted)] hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]'
+                      ? 'bg-[rgba(197,250,117,0.12)] border border-[rgba(197,250,117,0.35)] text-[#f8fff8] shadow-[0_0_12px_rgba(197,250,117,0.12)]'
+                      : 'border border-transparent text-[#748ea0] hover:bg-[rgba(248,255,248,0.07)] hover:text-[#f8fff8]'
                   )}
                   aria-current={isActive ? 'page' : undefined}
                 >
-                  <Icon size={13} className="shrink-0" />
+                  <Icon size={13} className={cn('shrink-0', isActive && 'text-[#c5fa75]')} />
                   <span className="hidden sm:inline">{item.label}</span>
                 </button>
               );
@@ -219,10 +219,10 @@ export function WorkspaceToolbar() {
                 <button
                   aria-label="More workspace tools"
                   className={cn(
-                    'relative flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors shrink-0',
+                    'relative flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-all shrink-0 border',
                     hasSecondaryActiveView
-                      ? 'bg-[var(--fb-ink)] text-[var(--fb-bg)]'
-                      : 'text-[var(--fb-muted)] hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)]'
+                      ? 'bg-[rgba(197,250,117,0.12)] border-[rgba(197,250,117,0.35)] text-[#f8fff8]'
+                      : 'border-transparent text-[#748ea0] hover:bg-[rgba(248,255,248,0.07)] hover:text-[#f8fff8]'
                   )}
                 >
                   <MoreHorizontal size={13} />
@@ -250,15 +250,15 @@ export function WorkspaceToolbar() {
         </div>
 
         {/* ── Right: command + build actions ───────────────── */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0 ml-auto sm:ml-0">
-          <ThemeToggle className="rounded-full border-[var(--fb-line)]" />
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto sm:ml-0">
+          <ThemeToggle className="rounded-full !border-[rgba(248,255,248,0.14)] !bg-[rgba(248,255,248,0.05)] text-[#748ea0] hover:text-[#f8fff8] hover:!bg-[rgba(248,255,248,0.10)]" />
           <button
             onClick={() => setCommandPaletteOpen(true)}
-            className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--fb-line)] bg-[var(--fb-card)] text-xs text-[var(--fb-dim)] hover:border-[var(--fb-ink)] hover:text-[var(--fb-ink)] transition-colors w-48 shrink-0"
+            className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border border-[rgba(248,255,248,0.12)] bg-[rgba(248,255,248,0.05)] text-xs text-[#748ea0] hover:border-[rgba(248,255,248,0.25)] hover:text-[#f8fff8] transition-colors w-48 shrink-0"
           >
             <Command size={11} />
             <span className="flex-1 text-left truncate">Search commands...</span>
-            <kbd className="rounded-full border border-[var(--fb-line)] px-1.5 py-0.5 font-mono text-[9px]">⌘K</kbd>
+            <kbd className="rounded-full border border-[rgba(248,255,248,0.12)] px-1.5 py-0.5 font-mono text-[9px]">⌘K</kbd>
           </button>
 
           <Button
@@ -266,27 +266,24 @@ export function WorkspaceToolbar() {
             size="sm"
             icon={<RotateCw size={13} />}
             onClick={handleBuild}
-            className="hidden md:flex"
+            className="hidden md:flex text-[#748ea0] hover:text-[#f8fff8] border-[rgba(248,255,248,0.12)] hover:border-[rgba(248,255,248,0.25)] hover:bg-[rgba(248,255,248,0.07)]"
           >
             <span className="hidden lg:inline">Rebuild</span>
           </Button>
 
-          <Button
-            variant="primary"
-            size="sm"
-            icon={isBuilding ? <Square size={13} /> : <Play size={13} />}
-            loading={isBuilding}
+          <button
             onClick={handleBuild}
-            className="h-9 px-4"
+            className="flex items-center gap-2 h-9 px-4 rounded-full bg-[#c5fa75] text-[#00101e] text-[11px] font-bold transition-all hover:brightness-105 hover:-translate-y-px active:scale-95 shadow-[0_4px_16px_rgba(197,250,117,0.25)]"
           >
+            {isBuilding ? <Square size={13} /> : <Play size={13} />}
             <span>{isBuilding ? 'Building...' : 'Build'}</span>
-          </Button>
+          </button>
 
           <Dropdown
             trigger={
               <button
                 aria-label="Build options"
-                className="p-2 rounded-full text-[var(--fb-muted)] hover:bg-[var(--fb-soft)] hover:text-[var(--fb-ink)] transition-colors"
+                className="p-2 rounded-full text-[#748ea0] hover:bg-[rgba(248,255,248,0.07)] hover:text-[#f8fff8] transition-colors border border-transparent hover:border-[rgba(248,255,248,0.12)]"
               >
                 <Hammer size={13} />
               </button>

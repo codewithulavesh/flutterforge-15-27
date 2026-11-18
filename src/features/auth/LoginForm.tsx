@@ -3,8 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, AlertCircle, ArrowRight, ArrowUpRight } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { AuthLayout } from './AuthLayout';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 
 export function LoginForm() {
   const navigate = useNavigate();
@@ -30,84 +28,133 @@ export function LoginForm() {
   }
 
   return (
-    <AuthLayout>
-      <div className="ffb-auth-card ff-fade-in">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--fb-line)] px-5 py-3.5 sm:px-7">
-          <span className="inline-flex items-center gap-2 font-mono text-[9.5px] font-medium uppercase tracking-[0.16em] text-[var(--fb-muted)]">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--fb-lime)]" />
-            Sign in
+    <AuthLayout
+      activeTab="login"
+      badge="Studio Access"
+      posterTitle={
+        <>
+          Welcome back
+          <br />
+          to your studio.
+        </>
+      }
+      posterSubtitle="Access your projects, configured AI models, and real-time live preview workspace."
+    >
+      <div className="ff-auth-card">
+        {/* Card Header Bar */}
+        <div className="flex items-center justify-between border-b border-[rgba(248,255,248,0.14)] px-6 py-4 sm:px-8">
+          <span className="inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--lv-lime)]">
+            <span className="size-2 rounded-full bg-[var(--lv-lime)] ring-2 ring-[var(--lv-lime)]/30" />
+            Sign In
           </span>
           <Link
             to="/"
-            className="inline-flex items-center gap-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[var(--fb-dim)] transition-colors hover:text-[var(--fb-ink)]"
+            className="inline-flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-[rgba(248,255,248,0.6)] transition-colors hover:text-[var(--lv-white)]"
           >
             Home
-            <ArrowUpRight size={11} aria-hidden />
+            <ArrowUpRight size={13} aria-hidden />
           </Link>
         </div>
 
-        <div className="p-5 sm:p-7">
-          <h1 className="ffb-display ffb-caps text-[clamp(30px,6.4vw,42px)] leading-[0.9] tracking-[-0.035em] text-[var(--fb-ink)]">
-            Welcome back
+        {/* Card Main Form Content */}
+        <div className="p-6 sm:p-8">
+          <h1 className="ff-auth-display text-[clamp(26px,4vw,34px)] leading-[1.05] tracking-[-0.04em] text-[var(--lv-white)]">
+            Sign In
           </h1>
-          <p className="mt-2.5 text-[13.5px] leading-relaxed text-[var(--fb-muted)]">
-            Sign in to your FlutterForge account.
+          <p className="mt-2 text-[14.5px] leading-relaxed text-[rgba(248,255,248,0.72)]">
+            Welcome back. Access your FlutterForge projects and AI agents.
           </p>
 
           {(error || formError) && (
-            <div role="alert" className="ffb-auth-alert mt-5">
-              <AlertCircle size={15} className="mt-px shrink-0" aria-hidden />
+            <div
+              role="alert"
+              className="mt-5 flex items-start gap-3 rounded-2xl border border-red-400/40 bg-red-500/20 p-4 text-[13px] leading-relaxed text-red-200"
+            >
+              <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-400" aria-hidden />
               <span>{formError || error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-6 space-y-[18px]">
-            <Input
-              label="Email"
-              type="email"
-              name="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              icon={<Mail size={16} />}
-              autoComplete="email"
-            />
-            <Input
-              label="Password"
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              icon={<Lock size={16} />}
-              autoComplete="current-password"
-            />
-
-            <div className="flex items-center justify-end">
-              <Link
-                to="/forgot-password"
-                className="inline-flex min-h-9 items-center font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--fb-muted)] underline decoration-[var(--fb-line)] underline-offset-4 transition-colors hover:text-[var(--fb-ink)] hover:decoration-[var(--fb-ink)]"
-              >
-                Forgot password?
-              </Link>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+            <div className="ff-auth-input-group">
+              <label htmlFor="login-email">Email address</label>
+              <div className="relative">
+                <div className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--lv-lime)]">
+                  <Mail size={17} />
+                </div>
+                <input
+                  id="login-email"
+                  type="email"
+                  name="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  className="ff-auth-input"
+                />
+              </div>
             </div>
 
-            <Button type="submit" loading={loading} className="h-12 w-full font-semibold">
-              Sign in
-            </Button>
+            <div className="ff-auth-input-group">
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="login-password" className="!mb-0">
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-[var(--lv-lime)] underline decoration-[var(--lv-lime)]/40 underline-offset-4 transition-colors hover:text-[var(--lv-white)]"
+                >
+                  Forgot?
+                </Link>
+              </div>
+              <div className="relative">
+                <div className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--lv-lime)]">
+                  <Lock size={17} />
+                </div>
+                <input
+                  id="login-password"
+                  type="password"
+                  name="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  className="ff-auth-input"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="ff-auth-btn-primary mt-2"
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  <span>Signing in…</span>
+                </span>
+              ) : (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRight size={16} aria-hidden />
+                </>
+              )}
+            </button>
           </form>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-[var(--fb-line)] bg-[var(--fb-soft)] px-5 py-3.5 sm:px-7">
-          <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--fb-muted)]">
+        {/* Card Footer Bar */}
+        <div className="flex items-center justify-between border-t border-[rgba(248,255,248,0.14)] bg-black/20 px-6 py-4 sm:px-8">
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[rgba(248,255,248,0.6)]">
             New here?
           </span>
           <Link
             to="/signup"
-            className="group inline-flex min-h-9 items-center gap-1.5 text-[12.5px] font-semibold text-[var(--fb-ink)]"
+            className="group inline-flex items-center gap-1.5 text-[13px] font-bold text-[var(--lv-lime)] transition-colors hover:text-[var(--lv-white)]"
           >
-            Create an account
-            <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" aria-hidden />
+            <span>Create an account</span>
+            <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" aria-hidden />
           </Link>
         </div>
       </div>
