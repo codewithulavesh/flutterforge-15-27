@@ -465,6 +465,13 @@ export function validateDartFiles(options: ValidateDartFilesOptions): Validation
     const tokenCache = new Map<string, Token[]>();
 
     for (const file of files) {
+      // Only Dart files go through the Dart lexer/AST. Other project files
+      // (pubspec.yaml, .gitignore, analysis_options.yaml, README…) must not
+      // be parsed as if they were Dart.
+      if (!file.path.endsWith('.dart')) {
+        findSecrets(file.path, file.content, push);
+        continue;
+      }
       const analysis = analyzeDart(file.content);
       analyses.set(file.path, analysis);
 
@@ -556,7 +563,9 @@ export function validateDartFiles(options: ValidateDartFilesOptions): Validation
     }
 
     findDuplicates(
-      files.map((file) => ({ path: file.path, analysis: analyses.get(file.path)! })),
+      files
+        .filter((file) => file.path.endsWith('.dart') && analyses.has(file.path))
+        .map((file) => ({ path: file.path, analysis: analyses.get(file.path)! })),
       fileSet,
       push,
     );

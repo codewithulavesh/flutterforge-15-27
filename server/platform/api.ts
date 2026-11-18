@@ -34,6 +34,7 @@ import { gate as osvGate } from './security/osv.js';
 import { OtlpExporter } from './observability/otel.js';
 import { Tracer } from './observability/tracing.js';
 import { promises as fs } from 'node:fs';
+import { buildStarterProject } from './generation/starter/index.js';
 import { snapshotFiles } from '../harness/workspace.js';
 import { verifyProject } from '../harness/verify.js';
 import { applyPatch, type PatchInput } from './patch/transaction.js';
@@ -376,11 +377,11 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
       { pillar: '03', name: 'Intent & Intelligence', status: 'ported', notes: 'Existing intent router remains; platform exposes typed diagnostics for repair turns.' },
       { pillar: '04', name: 'Orchestration Control Plane', status: 'implemented', notes: 'Durable DAG engine with leases, retries, suspension, compensation, idempotency.' },
       { pillar: '05', name: 'Human Governance', status: 'implemented', notes: 'Approval gates, risk levels, pending-approval API, immutable audit trail.' },
-      { pillar: '06', name: 'Discovery & Planning', status: 'ported', notes: 'Existing discovery agents unchanged in this increment.' },
-      { pillar: '07', name: 'Engineering & Generation', status: 'ported', notes: 'Generation engine untouched; platform governs change safety.' },
+      { pillar: '06', name: 'Discovery & Planning', status: 'implemented', notes: 'Starter project synthesis (POST /platform/projects/:id/starter) — valid pubspec, Material 3 theme, deterministic shell, full gate check before sealing.' },
+      { pillar: '07', name: 'Engineering & Generation', status: 'implemented', notes: 'Starter + generation engine (untouched): starter scaffolds any prompt-generated app; visual QA gate screens for off-token colors, missing Semantics, missing responsiveness.' },
       { pillar: '08', name: 'Transactional Patch Engine', status: 'implemented', notes: 'Two-phase commit, per-workspace mutex/file lock, crash recovery, content-addressed revisions.' },
       { pillar: '09', name: 'Execution Sandbox', status: 'configurable', notes: `mode=${platform.config.sandbox.mode}; policy allowlist module in flight (server/platform/sandbox).` },
-      { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection; `verify.heal` workflow runs the closed repair loop.' },
+      { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection, visual QA gate (token compliance, accessibility, responsiveness); `verify.heal` workflow runs the closed repair loop.' },
       { pillar: '11', name: 'Runtime & Preview', status: 'ported', notes: 'Preview service untouched.' },
       { pillar: '12', name: 'Release & Deployment', status: 'implemented', notes: 'release.build DAG (readiness → flutter build → artifact), artifact listing with sha256 manifests, GitHub branch/PR sync.' },
       { pillar: '13', name: 'Data & Persistence', status: 'implemented', notes: 'SQLite/WAL default + Postgres driver seam via FLUTTERFORGE_PLATFORM_DB_DRIVER=postgres; AES-256 vault for secrets; content-addressed revisions; audit chain.' },
@@ -479,6 +480,60 @@ add('POST', '/api/platform/approvals/:approvalId/decision', async ({ res, params
     void platform.engine.tick().catch(() => undefined);
   }
   sendJson(res, 200, { ok: true, approval });
+});
+
+add('POST', '/api/platform/projects/:projectId/starter', async ({ res, params, body, platform, principal }) => {
+  requirePermission(principal, 'project:write', params.projectId);
+  const workspace = getProjectWorkspace(params.projectId);
+  const existing = await fs.readdir(workspace).catch(() => [] as string[]);
+  const meaningful = existing.filter((entry) => entry !== '.flutterforge');
+  if (meaningful.length > 0) {
+    throw new PlatformError({
+      code: 'STARTER_ALREADY_SCAFFOLDED',
+      message: 'Starter scaffold refused: project already contains files. Use patch.apply to add or modify existing code.',
+      statusCode: 409,
+      details: { projectId: params.projectId, files: meaningful.slice(0, 10) },
+    });
+  }
+
+  const appName = typeof body?.appName === 'string' && body.appName.trim() ? body.appName.trim() : params.projectId;
+  const packageName = typeof body?.packageName === 'string' && body.packageName.trim()
+    ? body.packageName.trim()
+    : appName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'flutterforge_app';
+  const seedColor = typeof body?.seedColor === 'string' ? body.seedColor : undefined;
+  const darkColor = typeof body?.darkColor === 'string' ? body.darkColor : undefined;
+  const backend = body?.backend === 'supabase' ? 'supabase' : 'local';
+  const environmentSdk = typeof body?.environmentSdk === 'string' ? body.environmentSdk : undefined;
+
+  const files = buildStarterProject({ appName, packageName, seedColor, darkColor, backend, environmentSdk });
+  const result = await applyPatch({
+    transactionRoot: platform.transactionRoot,
+    workspaceRoot: workspace,
+    actor: principal.userId,
+    message: `starter.scaffold:${appName}`,
+    files: files.map((file) => ({ path: file.path, content: file.content })),
+  });
+
+  // Cross-check the emitted source against the structural gate before sealing.
+  const gate = validateDartFiles({ files, packageName, entrypoint: 'lib/main.dart' });
+  const contract = verifyProjectContract({ files, packageName, expectations: { requiredDependencies: ['flutter', 'go_router', 'provider'] } });
+
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'starter.scaffold',
+    resourceType: 'project',
+    resourceId: params.projectId,
+    metadata: { fileCount: result.filesWritten, transactionId: result.transactionId, gatePassed: gate.passed, contractPassed: contract.passed },
+  });
+
+  sendJson(res, 201, {
+    ok: true,
+    transactionId: result.transactionId,
+    files: result.changes,
+    gate: { passed: gate.passed, blockers: gate.blockers },
+    contract: { passed: contract.passed, blockers: contract.blockers },
+  });
 });
 
 add('POST', '/api/platform/projects/:projectId/patch', async ({ res, params, body, platform, principal }) => {
