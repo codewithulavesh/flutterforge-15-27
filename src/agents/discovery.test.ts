@@ -118,6 +118,35 @@ describe('ArchitectureAgent — enum hard-clamping', () => {
     expect(result.architectureSpec?.stateManagement).toBe('riverpod');
     expect(result.architectureSpec?.navigationType).toBe('drawer');
   });
+
+  it('vetoes a Supabase constraint when the prompt explicitly requires local-only', async () => {
+    callLLMJsonStrictMock.mockResolvedValue({
+      stateManagement: 'provider',
+      navigationType: 'tabs',
+      folderStructure: ['lib/'],
+      features: ['home'],
+      packages: { provider: '^6.1.2', supabase_flutter: '^2.6.0' },
+      backendMode: 'supabase',
+      rationale: 'model prefers supabase',
+    });
+
+    const state = baseState({
+      userPrompt: 'Build a local-only admin dashboard. No backend, no database. Do NOT use Supabase.',
+      productBrief: {
+        appName: 'ApexAdmin',
+        oneLiner: 'Admin dashboard',
+        targetAudience: 'Admins',
+        primaryProblem: 'Management',
+        platforms: ['web'],
+        constraints: ['Supabase backend requested (auth/database/realtime)'],
+      },
+    });
+    const result = await runArchitectureAgent(state);
+
+    expect(result.architectureSpec?.backendMode).toBe('none');
+    expect(result.architectureSpec?.packages.supabase_flutter).toBeUndefined();
+    expect(result.architectureSpec?.stateManagement).toBe('provider');
+  });
 });
 
 describe('UXResearchAgent — screen count clamp', () => {

@@ -1,4 +1,6 @@
 .lv-carousel {
+  --lv-carousel-slide: 330px;
+  --lv-carousel-duration: 1400ms;
   position: relative;
   isolation: isolate;
   container-type: inline-size;
@@ -13,37 +15,38 @@
   box-sizing: border-box;
 }
 
-.lv-carousel .lv-carousel__slides {
-  display: grid;
-  min-block-size: 390px;
-  margin-inline-end: 76px;
-  padding-block: 4px;
+.lv-carousel .lv-carousel__viewport {
+  position: relative;
+  block-size: var(--lv-carousel-slide);
+  margin-inline-end: 62px;
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
 
-/* Shared grid sizing keeps longer slides from clipping or shifting the page. */
+.lv-carousel .lv-carousel__track {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  transform: translate3d(0, calc(-1 * var(--lv-carousel-index, 1) * var(--lv-carousel-slide)), 0);
+  transition: transform var(--lv-carousel-duration) cubic-bezier(0.65, 0, 0.35, 1);
+  will-change: transform;
+}
+
+.lv-carousel .lv-carousel__track[data-instant] {
+  transition: none;
+}
+
+/* Fixed-height slides keep every step exactly one viewport tall. */
 .lv-carousel .lv-carousel__slide {
-  grid-area: 1 / 1;
-  align-self: start;
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex: 0 0 var(--lv-carousel-slide);
+  flex-direction: column;
+  justify-content: center;
   gap: 24px;
+  block-size: var(--lv-carousel-slide);
   min-inline-size: 0;
-  opacity: 0;
-  transform: translateY(32px);
-  pointer-events: none;
-  transition: transform 900ms ease, opacity 900ms ease;
-}
-
-.lv-carousel .lv-carousel__slide[data-position='before'] {
-  transform: translateY(-32px);
-}
-
-.lv-carousel .lv-carousel__slide[aria-hidden='false'] {
-  z-index: 1;
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+  padding-block: 30px;
 }
 
 .lv-carousel .lv-carousel__title {
@@ -52,8 +55,8 @@
   font-family: var(--lv-display, 'Panchang', sans-serif);
   font-size: 36px;
   font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.035em;
+  line-height: 1.2;
+  letter-spacing: normal;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
@@ -64,7 +67,7 @@
   font-family: var(--lv-body, 'Satoshi', sans-serif);
   font-size: 24px;
   font-weight: 400;
-  line-height: 1.55;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
@@ -81,15 +84,16 @@
 
 .lv-carousel .lv-carousel__controls {
   position: absolute;
-  inset-block-start: 4px;
+  inset-block-start: 34px;
   inset-inline-end: 0;
   z-index: 2;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .lv-carousel .lv-carousel__control {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -100,13 +104,27 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: #00101e;
+  background: transparent;
   color: #fff;
   cursor: pointer;
   touch-action: manipulation;
 }
 
-.lv-carousel .lv-carousel__control:hover:not(:disabled) {
+.lv-carousel .lv-carousel__control::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #00101e;
+  transition: background-color 200ms;
+}
+
+.lv-carousel .lv-carousel__control svg {
+  position: relative;
+  z-index: 1;
+}
+
+.lv-carousel .lv-carousel__control:hover:not(:disabled)::before {
   background: #2f4858;
 }
 
@@ -122,13 +140,17 @@
 
 /* Also adapt in narrow desktop columns, independently of the page viewport. */
 @container (max-width: 480px) {
-  .lv-carousel .lv-carousel__slides {
-    min-block-size: 320px;
+  .lv-carousel {
+    --lv-carousel-slide: 320px;
+  }
+
+  .lv-carousel .lv-carousel__viewport {
     margin-inline-end: 64px;
   }
 
   .lv-carousel .lv-carousel__slide {
     gap: 20px;
+    padding-block: 24px;
   }
 
   .lv-carousel .lv-carousel__title {
@@ -141,13 +163,17 @@
 }
 
 @media (max-width: 640px) {
-  .lv-carousel .lv-carousel__slides {
-    min-block-size: 320px;
+  .lv-carousel {
+    --lv-carousel-slide: 320px;
+  }
+
+  .lv-carousel .lv-carousel__viewport {
     margin-inline-end: 64px;
   }
 
   .lv-carousel .lv-carousel__slide {
     gap: 20px;
+    padding-block: 24px;
   }
 
   .lv-carousel .lv-carousel__title {
@@ -159,14 +185,12 @@
   }
 }
 
-.lv-carousel[data-reduced-motion='true'] .lv-carousel__slide {
+.lv-carousel[data-reduced-motion='true'] .lv-carousel__track {
   transition: none;
-  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lv-carousel .lv-carousel__slide {
+  .lv-carousel .lv-carousel__track {
     transition: none;
-    transform: none;
   }
 }

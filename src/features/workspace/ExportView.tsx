@@ -30,6 +30,8 @@ const TARGETS: Array<{ id: PublishTarget; label: string; icon: typeof Globe; hin
   { id: 'web', label: 'Web', icon: Globe, hint: 'Static Flutter web bundle served by the local engine.' },
   { id: 'pwa', label: 'PWA', icon: Globe, hint: 'Web build with manifest and service worker checks for installability.' },
   { id: 'android', label: 'APK', icon: Smartphone, hint: 'Release APK via the Android toolchain on this machine.' },
+  { id: 'aab', label: 'AAB', icon: FileArchive, hint: 'Play Store upload bundle (.aab) — sign with your upload key before publishing.' },
+  { id: 'ios', label: 'iOS', icon: Smartphone, hint: 'Unsigned release .app — requires a Mac; sign before App Store upload.' },
   { id: 'macos', label: 'macOS', icon: Monitor, hint: 'Release .app bundle — requires a Mac.' },
   { id: 'windows', label: 'Windows', icon: Laptop, hint: 'Release Windows runner — requires Windows.' },
 ];
@@ -103,7 +105,7 @@ export function ExportView() {
   }
 
   const targetUnavailable =
-    (target === 'macos' && hostPlatform !== 'darwin') ||
+    ((target === 'macos' || target === 'ios') && hostPlatform !== 'darwin') ||
     (target === 'windows' && hostPlatform !== 'win32');
 
   const publicUrl = job?.report?.publicPath
@@ -113,7 +115,7 @@ export function ExportView() {
   async function handlePublish() {
     if (!currentProject) return;
     if (targetUnavailable) {
-      toast('error', `${target === 'macos' ? 'macOS' : 'Windows'} builds must run on a ${target === 'macos' ? 'Mac' : 'Windows machine'}.`);
+      toast('error', `${target === 'macos' || target === 'ios' ? (target === 'ios' ? 'iOS' : 'macOS') : 'Windows'} builds must run on a ${target === 'windows' ? 'Windows machine' : 'Mac'}.`);
       return;
     }
     const label = TARGETS.find((item) => item.id === target)?.label ?? target;
@@ -275,7 +277,7 @@ flutter run -d <device>`;
             {targetUnavailable && (
               <span className="text-amber-500">
                 {' '}
-                This build needs a {target === 'macos' ? 'Mac' : 'Windows machine'} — publish Web or PWA here instead.
+                This build needs a {target === 'windows' ? 'Windows machine' : 'Mac'} — publish Web or PWA here instead.
               </span>
             )}
           </p>
@@ -363,14 +365,14 @@ flutter run -d <device>`;
                   <ScrollText size={12} />
                   Build report
                 </a>
-                {job.report.target === 'android' && (
+                {(job.report.target === 'android' || job.report.target === 'aab') && (
                   <a
                     className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ff-border)] px-3 py-1.5 text-xs font-medium text-[var(--ff-text)] transition-colors hover:border-[var(--ff-primary)] hover:text-[var(--ff-primary)]"
                     download
                     href={`${API_PREFIX}/api/publish/project/${currentProject.id}/artifact`}
                   >
                     <Download size={12} />
-                    Download APK
+                    Download {job.report.target === 'aab' ? 'AAB' : 'APK'}
                   </a>
                 )}
                 {job.report.artifact?.kind === 'directory' && isDesktop && (

@@ -49,6 +49,12 @@ export interface PlatformConfig {
     readonly defaultTimeoutMs: number;
     readonly cpuCores: number;
     readonly memoryMb: number;
+    /**
+     * When true the platform refuses to start command execution without
+     * container isolation: missing Docker or an explicit `local` mode is a
+     * boot-time configuration error, never a silent fallback.
+     */
+    readonly requireIsolation: boolean;
   };
   readonly patch: {
     readonly maxFiles: number;
@@ -161,6 +167,15 @@ export function loadPlatformConfig(env: Env = process.env): PlatformConfig {
   const maxBodyBytes = readInt(env, 'FLUTTERFORGE_MAX_BODY_BYTES', 64 * 1024 * 1024, issues, { min: 1024, max: 512 * 1024 * 1024 });
   const sampleRatio = readFloat(env, 'FLUTTERFORGE_TRACE_SAMPLE_RATIO', 0.1, issues, { min: 0, max: 1 });
 
+  const sandboxMode = readEnum(env, 'FLUTTERFORGE_SANDBOX', 'auto', ['auto', 'docker', 'local'] as const, issues);
+  const requireIsolation = readBool(env, 'FLUTTERFORGE_SANDBOX_REQUIRE_ISOLATION', false, issues);
+  if (requireIsolation && sandboxMode === 'local') {
+    issues.push({
+      variable: 'FLUTTERFORGE_SANDBOX',
+      message: 'cannot be "local" while FLUTTERFORGE_SANDBOX_REQUIRE_ISOLATION is enabled',
+    });
+  }
+
   const config: PlatformConfig = Object.freeze({
     nodeEnv,
     dataDir,
@@ -190,7 +205,8 @@ export function loadPlatformConfig(env: Env = process.env): PlatformConfig {
       retentionDays: readInt(env, 'FLUTTERFORGE_WORKFLOW_RETENTION_DAYS', 30, issues, { min: 1, max: 3650 }),
     }),
     sandbox: Object.freeze({
-      mode: readEnum(env, 'FLUTTERFORGE_SANDBOX', 'auto', ['auto', 'docker', 'local'] as const, issues),
+      mode: sandboxMode,
+      requireIsolation,
       dockerImage: readString(env, 'FLUTTERFORGE_SANDBOX_IMAGE', 'ghcr.io/flutterforge/build-env:3.24') as string,
       runtime: readEnum(env, 'FLUTTERFORGE_SANDBOX_RUNTIME', 'runc', ['runc', 'runsc'] as const, issues),
       maxConcurrent: readInt(env, 'FLUTTERFORGE_SANDBOX_CONCURRENCY', 4, issues, { min: 1, max: 32 }),

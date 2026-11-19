@@ -2,6 +2,14 @@ import type { ProjectState, ProductBrief, GateDiagnostic } from '../orchestrator
 import { callLLMJsonStrict, agentModelFor } from './llmClient';
 import { validate } from './schema';
 import { IntakeLLMOutput as IntakeSchema } from './schemas';
+import {
+  analyzeBackendIntent,
+  detectDomain,
+  extractDarkTheme,
+  extractExplicitAppName,
+  extractPlatforms,
+  extractStateManagement,
+} from './promptIntent';
 
 interface IntakeLLMOutput {
   appName: string;
@@ -82,7 +90,13 @@ You must return a valid JSON object with these exact fields:
   "colorPalette": "Hex seed color that fits the domain, e.g. #2563EB"
 }
 
-Be specific, accurate, and production-minded. Infer all missing details from the prompt context.`,
+CRITICAL RULES — the user's literal words override your inferences:
+- Honor negations and explicit fields. "no backend", "local only", "no auth", "no database", "do NOT use Supabase", "Backend: None" all mean needsSupabase: false. Never set needsSupabase true because a feature merely sounds like it needs a server; "user management" or "role-based access" can be modeled locally with static roles.
+- Take appName from explicit declarations like "Project: X" or "app called X". Do NOT use generic words such as "Production" from "production-grade".
+- Take platforms and stateManagement from explicit "Platform:" and "State Management:" fields when present.
+- Use domain "general" for admin dashboards, control panels, analytics and audit tools; do not classify them as ecommerce just because they mention products or management.
+- "Theme Mode: dark" means a dark theme is preferred.
+Be specific, accurate, and production-minded. Infer only details the prompt does not state.`,
         },
         {
           role: 'user',
@@ -98,27 +112,23 @@ Be specific, accurate, and production-minded. Infer all missing details from the
       }
     );
   } catch (err) {
-    // Fallback: derive from keywords
-    const p = prompt.toLowerCase();
-    const domain =
-      p.match(/shop|store|e-commerce|cart|product|marketplace/) ? 'ecommerce' :
-      p.match(/fitness|workout|gym|health|track|step|calor/) ? 'fitness' :
-      p.match(/task|todo|project|kanban|board/) ? 'tasks' :
-      p.match(/chat|message|social|community|feed|post/) ? 'social' :
-      p.match(/finance|money|expense|wallet|budget|invest/) ? 'finance' :
-      p.match(/food|recipe|restaurant|meal|diet/) ? 'food' :
-      p.match(/music|audio|playlist|podcast|listen/) ? 'music' :
-      p.match(/travel|trip|hotel|flight|map|navigation/) ? 'travel' :
-      p.match(/learn|course|quiz|education|study/) ? 'education' : 'general';
+    // Fallback: derive from the explicit prompt intent, then keywords.
+    const intent = analyzeBackendIntent(prompt);
+    const domain = detectDomain(prompt) ?? 'general';
 
     const colorMap: Record<string, string> = {
       ecommerce: '#7C3AED', fitness: '#059669', tasks: '#2563EB',
       social: '#DB2777', finance: '#0891B2', food: '#EA580C',
-      music: '#7C3AED', travel: '#0284C7', education: '#16A34A', general: '#2563EB',
+      music: '#7C3AED', travel: '#0284C7', education: '#16A34A', health: '#059669', general: '#2563EB',
     };
 
-    const rawName = prompt.match(/(?:build|create|make|design)\s+(?:an?\s+)?([A-Za-z0-9\s]{3,25})/i)?.[1]?.trim() || domain;
-    const appName = rawName.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('').replace(/[^A-Za-z0-9]/g, '') || 'ForgeApp';
+    const explicitName = extractExplicitAppName(prompt);
+    const rawName = explicitName
+      ?? prompt.match(/(?:build|create|make|design)\s+(?:an?\s+)?([A-Za-z][A-Za-z0-9]{2,24})/i)?.[1]?.trim()
+      ?? domain;
+    const appName = explicitName
+      ?? rawName.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('').replace(/[^A-Za-z0-9]/g, '')
+      ?? 'ForgeApp';
 
     output = {
       appName,
@@ -126,19 +136,58 @@ Be specific, accurate, and production-minded. Infer all missing details from the
       targetAudience: 'General users on mobile and web',
       primaryProblem: prompt,
       domain,
-      platforms: ['web', 'android', 'ios'],
+      platforms: extractPlatforms(prompt) ?? ['web', 'android', 'ios'],
       constraints: ['Material 3 compliance', 'Feature-first architecture', '4-state UI pattern'],
       keyFeatures: ['Dashboard', 'Data management', 'User profile', 'Settings', 'Notifications'],
       screens: ['SplashScreen', 'HomeScreen', 'DetailScreen', 'ProfileScreen', 'SettingsScreen'],
-      stateManagement: 'provider',
-      needsSupabase: p.includes('auth') || p.includes('login') || p.includes('account') || p.includes('database') || p.includes('realtime') || p.includes('supabase'),
+      stateManagement: extractStateManagement(prompt) ?? 'provider',
+      needsSupabase: intent.wantsSupabase,
       colorPalette: colorMap[domain] || '#2563EB',
     };
     console.warn('[IntakeAgent] LLM failed, using keyword fallback:', err);
   }
 
+  // --- Explicit prompt intent wins over model guesses ---
+  // The model may misread "production-grade" as the app name, "dashboard" as
+  // ecommerce, or "no auth / do NOT use Supabase" as a backend request.
+  const intent = analyzeBackendIntent(prompt);
+  const explicitName = extractExplicitAppName(prompt);
+  const detectedDomain = detectDomain(prompt);
+  const resolvedAppName = explicitName ?? str(output.appName, 'ForgeApp');
+  const resolvedDomain = detectedDomain ?? str(output.domain, 'general');
+  const resolvedPlatforms = extractPlatforms(prompt) ?? asStringArray(output.platforms);
+  const resolvedStateManagement = extractStateManagement(prompt)
+    ?? clampEnum(output.stateManagement, STATE_MANAGEMENT, 'provider');
+  let resolvedNeedsSupabase = asBool(output.needsSupabase);
+  if (intent.localOnly) resolvedNeedsSupabase = false;
+  else if (intent.wantsSupabase) resolvedNeedsSupabase = true;
+
+  if (explicitName && explicitName.toLowerCase() !== str(output.appName).toLowerCase()) {
+    diagnostics.push({
+      gate: 'intake',
+      level: 'info',
+      message: `App name taken from prompt: "${resolvedAppName}" (model said "${str(output.appName, 'n/a')}")`,
+    });
+  }
+  if (detectedDomain && detectedDomain !== str(output.domain).toLowerCase()) {
+    diagnostics.push({
+      gate: 'intake',
+      level: 'info',
+      message: `Domain derived from prompt: "${detectedDomain}" (model said "${str(output.domain, 'n/a')}")`,
+    });
+  }
+  if (resolvedNeedsSupabase !== asBool(output.needsSupabase)) {
+    diagnostics.push({
+      gate: 'intake',
+      level: 'warning',
+      message: intent.localOnly
+        ? 'Backend disabled: prompt explicitly asks for a local-only / no-backend app.'
+        : 'Backend enabled: prompt explicitly requests a backend or Supabase.',
+    });
+  }
+
   // --- Sanitize model output before it reaches shared state ---
-  const rawPlatforms = asStringArray(output.platforms).map((p) => p.toLowerCase());
+  const rawPlatforms = resolvedPlatforms.map((p) => p.toLowerCase());
   const platformSet = new Set<ProductBrief['platforms'][number]>();
   for (const p of rawPlatforms) {
     if (VALID_PLATFORMS.has(p)) platformSet.add(p as ProductBrief['platforms'][number]);
@@ -163,11 +212,13 @@ Be specific, accurate, and production-minded. Infer all missing details from the
   }
 
   // Constraints always exist (never undefined/null downstream).
-  const constraints = asStringArray(output.constraints);
-  // Coordinate Supabase with the architecture agent via ProductBrief.constraints only:
-  // if the raw user prompt asks for Supabase, record it as a constraint so the
-  // architecture agent can see it in its own input — never guess there.
-  if (/supabase/i.test(prompt) && !constraints.some((c) => /supabase/i.test(c))) {
+  let constraints = asStringArray(output.constraints);
+  // Coordinate Supabase with the architecture agent via ProductBrief.constraints,
+  // but only when the prompt actually asks for it. "Do NOT use Supabase" and
+  // "no backend" must never be turned into a Supabase constraint.
+  if (intent.localOnly) {
+    constraints = constraints.filter((c) => !/supabase/i.test(c));
+  } else if (intent.wantsSupabase && !constraints.some((c) => /supabase/i.test(c))) {
     constraints.push(SUPABASE_CONSTRAINT);
   }
 
@@ -184,17 +235,19 @@ Be specific, accurate, and production-minded. Infer all missing details from the
   // Sanitize the side-channel intake data consumed by downstream agents.
   const intakeData = {
     ...output,
+    appName: resolvedAppName,
+    domain: resolvedDomain,
     platforms,
     constraints,
     screens: asStringArray(output.screens),
     keyFeatures: asStringArray(output.keyFeatures),
-    stateManagement: clampEnum(output.stateManagement, STATE_MANAGEMENT, 'provider'),
-    needsSupabase: asBool(output.needsSupabase),
+    stateManagement: resolvedStateManagement,
+    needsSupabase: resolvedNeedsSupabase,
     colorPalette: seedColor,
   };
 
   const brief: ProductBrief = {
-    appName: str(output.appName, 'ForgeApp'),
+    appName: resolvedAppName,
     oneLiner: str(output.oneLiner, prompt.slice(0, 120)),
     targetAudience: str(output.targetAudience),
     primaryProblem: str(output.primaryProblem, prompt),
@@ -212,11 +265,12 @@ Be specific, accurate, and production-minded. Infer all missing details from the
         useMaterial3: true, isDarkPreferred: false, borderRadius: 12,
       }),
       primaryColor: seedColor,
+      isDarkPreferred: extractDarkTheme(prompt) ?? state.designTokens?.isDarkPreferred ?? false,
     },
     diagnostics: [...state.diagnostics, ...diagnostics],
     logs: [
       ...state.logs,
-      `[Intake Agent] Domain: "${str(output.domain, 'general')}" | App: "${brief.appName}" | Screens: ${intakeData.screens.join(', ')} | Supabase: ${intakeData.needsSupabase}`,
+      `[Intake Agent] Domain: "${resolvedDomain}" | App: "${brief.appName}" | Screens: ${intakeData.screens.join(', ')} | Supabase: ${intakeData.needsSupabase}`,
     ],
     // Pass intake analysis downstream via a custom field
     _intakeData: intakeData,

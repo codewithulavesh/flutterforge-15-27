@@ -66,6 +66,12 @@ function mountCarousel(reducedMotion = false) {
   return { ...result, region };
 }
 
+// Wrapping clones repeat the first and last slide for seamless motion; tests
+// that inspect copy target the real (non-clone) slide.
+function realSlideText(text: string) {
+  return screen.getAllByText(text).find(node => !node.closest('[data-clone]'));
+}
+
 beforeEach(() => {
   // Keep RTL/user-event's zero-delay async drains real; only the rotation clock is fake.
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -88,14 +94,31 @@ describe('LimeCarousel', () => {
     expect(region).toHaveClass('lv-carousel');
     expect(within(region).getAllByRole('heading', { level: 3 })).toHaveLength(1);
     expect(screen.getByRole('heading', { name: 'Start with an idea' })).toBeInTheDocument();
-    expect(screen.getByText('Describe the app you want to build.')).toBeInTheDocument();
-    expect(screen.getByText('01 / Design')).toBeInTheDocument();
+    expect(realSlideText('Describe the app you want to build.')).toBeInTheDocument();
+    expect(realSlideText('01 / Design')).toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(3);
     for (const title of ['Make it your own', 'Ship something real']) {
-      const inactive = screen.getByText(title).closest('[aria-hidden="true"]');
+      const inactive = realSlideText(title)?.closest('[aria-hidden="true"]');
       expect(inactive).not.toBeNull();
       expect(inactive?.querySelector('a, button, input, select, textarea, [tabindex]')).toBeNull();
     }
+  });
+
+  it('glides one fixed-height slide per step and hides the wrap clones from assistive tech', () => {
+    const { region } = mountCarousel();
+    const track = region.querySelector('.lv-carousel__track') as HTMLElement;
+    expect(track).not.toBeNull();
+    expect(track.querySelectorAll('.lv-carousel__slide')).toHaveLength(items.length + 2);
+    expect(track.querySelectorAll('[data-clone]')).toHaveLength(2);
+    for (const clone of track.querySelectorAll('[data-clone]')) {
+      expect(clone).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(track.style.getPropertyValue('--lv-carousel-index')).toBe('1');
+    fireEvent.click(screen.getByRole('button', { name: 'Next Build stories' }));
+    expect(track.style.getPropertyValue('--lv-carousel-index')).toBe('2');
+    expect(within(region).getByRole('heading', { name: 'Make it your own' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Build stories' }));
+    expect(track.style.getPropertyValue('--lv-carousel-index')).toBe('1');
   });
 
   it('wraps previous from first to last and next from last to first', () => {

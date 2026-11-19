@@ -2,6 +2,7 @@ import type { ProjectState, ArchitectureSpec, GateDiagnostic } from '../orchestr
 import { callLLMJsonStrict, agentModelFor } from './llmClient';
 import { validate } from './schema';
 import { ArchitectureOutput } from './schemas';
+import { analyzeBackendIntent, extractStateManagement } from './promptIntent';
 
 const STATE_MANAGEMENT = ['provider', 'riverpod', 'bloc'] as const;
 const NAVIGATION = ['tabs', 'drawer', 'stack'] as const;
@@ -37,12 +38,19 @@ export async function runArchitectureAgent(state: ProjectState): Promise<Partial
   const screens = state.screenGraph?.screens ?? [];
   const domain = str(intake?.domain, 'general');
   const needsSupabase = asBool(intake?.needsSupabase);
-  const stateManagementHint = clampEnum(intake?.stateManagement, STATE_MANAGEMENT, 'provider');
+  const promptIntent = analyzeBackendIntent(state.userPrompt ?? '');
+  const localOnly = promptIntent.localOnly;
+  const promptStateManagement = extractStateManagement(state.userPrompt ?? '');
+  const stateManagementHint = promptStateManagement
+    ? clampEnum(promptStateManagement, STATE_MANAGEMENT, 'provider')
+    : clampEnum(intake?.stateManagement, STATE_MANAGEMENT, 'provider');
   // Coordinate Supabase through ProductBrief.constraints only — the intake agent
   // records an explicit constraint when the user prompt asks for Supabase.
+  // The raw prompt is the final authority: an explicit "no backend / local only"
+  // vetoes both a stale constraint and a model guess.
   const constraintsText = asStringArray(brief?.constraints).join(' ').toLowerCase();
   const constraintsWantSupabase = /\bsupabase\b/.test(constraintsText);
-  const wantsSupabase = needsSupabase || constraintsWantSupabase;
+  const wantsSupabase = !localOnly && (needsSupabase || constraintsWantSupabase);
 
   const diagnostics: GateDiagnostic[] = [];
 
@@ -139,7 +147,7 @@ Choose the best architecture. If Supabase is needed, include supabase_flutter pa
       ],
       features: asStringArray(screens.map((s) => s.id || s.name.replace('Screen', '').toLowerCase())),
       packages: basePackages,
-      backendMode: wantsSupabase ? 'supabase' : 'local',
+      backendMode: localOnly ? 'none' : wantsSupabase ? 'supabase' : 'local',
       rationale: 'Provider + GoRouter for simplicity and Flutter compatibility',
     };
   }
@@ -154,14 +162,20 @@ Choose the best architecture. If Supabase is needed, include supabase_flutter pa
     return clamped;
   };
 
-  const stateManagement = trackClamp('stateManagement', output.stateManagement, clampEnum(output.stateManagement, STATE_MANAGEMENT, 'provider'));
+  const stateManagement = trackClamp(
+    'stateManagement',
+    output.stateManagement,
+    clampEnum(promptStateManagement ?? output.stateManagement, STATE_MANAGEMENT, 'provider'),
+  );
   const navigationType = trackClamp('navigationType', output.navigationType, clampEnum(output.navigationType, NAVIGATION, 'tabs'));
   const backendMode = trackClamp(
     'backendMode',
     output.backendMode,
-    (wantsSupabase
-      ? 'supabase'
-      : clampEnum(output.backendMode, BACKEND_MODES, 'none')) as ArchitectureSpec['backendMode'],
+    (localOnly
+      ? 'none'
+      : wantsSupabase
+        ? 'supabase'
+        : clampEnum(output.backendMode, BACKEND_MODES, 'none')) as ArchitectureSpec['backendMode'],
   );
 
   for (const note of clampNotes) {
@@ -175,7 +189,9 @@ Choose the best architecture. If Supabase is needed, include supabase_flutter pa
     for (const [key, value] of Object.entries(output.packages)) {
       const name = key.trim();
       const version = typeof value === 'string' ? value.trim() : '';
-      if (name && version) packages[name] = version;
+      if (!name || !version) continue;
+      if (localOnly && /^supabase/i.test(name)) continue;
+      packages[name] = version;
     }
   }
 

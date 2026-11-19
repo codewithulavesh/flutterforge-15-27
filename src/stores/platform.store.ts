@@ -58,6 +58,85 @@ export interface PlatformAuditVerification {
 
 export type ApprovalDecision = 'approved' | 'rejected';
 
+/* ── Agent Corps ─────────────────────────────────────────────────────────── */
+
+export type CorpsDepartment = 'product' | 'design' | 'engineering' | 'quality' | 'delivery' | 'intelligence';
+export type CorpsSeverity = 'blocker' | 'major' | 'minor' | 'info';
+export type CorpsStatus = 'pass' | 'warn' | 'fail';
+
+export interface CorpsAgent {
+  id: string;
+  name: string;
+  title: string;
+  department: CorpsDepartment;
+  description: string;
+  capabilities: string[];
+  mode: 'deterministic';
+}
+
+export interface CorpsDepartmentGroup {
+  department: CorpsDepartment;
+  label: string;
+  weight: number;
+  remit: string;
+  agents: CorpsAgent[];
+}
+
+export interface CorpsFinding {
+  code: string;
+  severity: CorpsSeverity;
+  message: string;
+  file?: string;
+  line?: number;
+  suggestion?: string;
+  evidence?: string;
+}
+
+export interface CorpsReport {
+  agentId: string;
+  name: string;
+  title: string;
+  department: CorpsDepartment;
+  status: CorpsStatus;
+  score: number;
+  findings: CorpsFinding[];
+  stats: { blockers: number; majors: number; minors: number; infos: number; filesConsidered?: number };
+  durationMs: number;
+}
+
+export interface CorpsDepartmentScore {
+  department: CorpsDepartment;
+  label: string;
+  weight: number;
+  score: number;
+  status: CorpsStatus;
+  agentIds: string[];
+  blockers: number;
+  majors: number;
+  minors: number;
+}
+
+export interface CorpsScorecard {
+  projectId: string;
+  overallScore: number;
+  verdict: CorpsStatus;
+  departments: CorpsDepartmentScore[];
+  reports: CorpsReport[];
+  blockers: CorpsFinding[];
+  findingCounts: Record<string, number>;
+  stats: {
+    agents: number;
+    findings: number;
+    blockers: number;
+    majors: number;
+    minors: number;
+    infos: number;
+    filesReviewed: number;
+  };
+  generatedAt: number;
+  durationMs: number;
+}
+
 interface PlatformState {
   revisions: PlatformRevision[];
   approvals: PlatformApproval[];
@@ -65,6 +144,14 @@ interface PlatformState {
   error: string | null;
   /** Wall-clock duration of the last completed request, in milliseconds. */
   lastFetchMs: number;
+
+  /** Agent Corps roster, grouped by department. Empty until fetched. */
+  corpsRoster: CorpsDepartmentGroup[];
+  rosterLoaded: boolean;
+  /** Latest board review; null until a project has been reviewed this session. */
+  scorecard: CorpsScorecard | null;
+  reviewing: boolean;
+  reviewError: string | null;
 
   refreshRevisions: (projectId: string) => Promise<void>;
   refreshApprovals: () => Promise<void>;
@@ -76,6 +163,11 @@ interface PlatformState {
   fetchAudit: (limit?: number) => Promise<PlatformAuditEntry[]>;
   /** Returns the chain verification verdict, or null on failure. */
   verifyAudit: () => Promise<PlatformAuditVerification | null>;
+  fetchCorpsRoster: () => Promise<void>;
+  /** Runs the Agent Corps over the project's current workspace snapshot.
+   *  Resolves the scorecard, or null with `reviewError` set. */
+  reviewProject: (projectId: string, options?: { prompt?: string }) => Promise<CorpsScorecard | null>;
+  clearReview: () => void;
   clearError: () => void;
 }
 
@@ -118,6 +210,11 @@ export const usePlatformStore = create<PlatformState>((set) => {
     loading: false,
     error: null,
     lastFetchMs: 0,
+    corpsRoster: [],
+    rosterLoaded: false,
+    scorecard: null,
+    reviewing: false,
+    reviewError: null,
 
     refreshRevisions: async (projectId) => {
       const result = await run(() =>
@@ -175,6 +272,45 @@ export const usePlatformStore = create<PlatformState>((set) => {
       if (!result.ok) return null;
       return result.value.verification ?? { ok: Boolean(result.value.ok), checked: 0 };
     },
+
+    fetchCorpsRoster: async () => {
+      try {
+        const data = await apiFetch<{ departments?: CorpsDepartmentGroup[] }>('/api/platform/agents');
+        set({
+          corpsRoster: Array.isArray(data.departments) ? data.departments : [],
+          rosterLoaded: true,
+        });
+      } catch (error) {
+        set({ error: message(error), rosterLoaded: true });
+      }
+    },
+
+    reviewProject: async (projectId, options) => {
+      set({ reviewing: true, reviewError: null });
+      const started = Date.now();
+      try {
+        const response = await apiFetch<{ scorecard?: CorpsScorecard }>(
+          `/api/platform/projects/${encodeURIComponent(projectId)}/agents/review`,
+          {
+            method: 'POST',
+            headers: JSON_HEADERS,
+            body: JSON.stringify(options?.prompt ? { prompt: options.prompt } : {}),
+          },
+        );
+        const scorecard = response.scorecard ?? null;
+        set({ reviewing: false, scorecard, lastFetchMs: Date.now() - started });
+        return scorecard;
+      } catch (error) {
+        set({
+          reviewing: false,
+          reviewError: message(error),
+          lastFetchMs: Date.now() - started,
+        });
+        return null;
+      }
+    },
+
+    clearReview: () => set({ scorecard: null, reviewError: null }),
 
     clearError: () => set({ error: null }),
   };

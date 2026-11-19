@@ -415,3 +415,66 @@ test('publish builds a web bundle, hosts it, and writes a build report', async (
   assert.equal(artifact.status, 404);
 });
 
+test('publish builds an Android App Bundle and serves the download', async () => {
+  const files = [
+    { path: 'pubspec.yaml', content: 'name: publish_aab_app\n' },
+    { path: 'lib/main.dart', content: 'void main() {}\n' },
+  ];
+  const start = await fetch(`${baseUrl}/api/publish/project-aab/build`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files, target: 'aab' }),
+  });
+  assert.equal(start.status, 202);
+
+  let status: any = null;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const response = await fetch(`${baseUrl}/api/publish/project/project-aab/status`);
+    status = await response.json();
+    if (status.status === 'succeeded' || status.status === 'failed') break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(status?.status, 'succeeded', status?.logs?.slice(-6).join('\n'));
+  assert.equal(status.report.target, 'aab');
+  assert.equal(status.report.artifact.kind, 'file');
+  assert.equal(status.report.artifact.name, 'app-release.aab');
+
+  const artifact = await fetch(`${baseUrl}/api/publish/project/project-aab/artifact`);
+  assert.equal(artifact.status, 200);
+  assert.match(await artifact.text(), /FIXTURE-AAB/);
+});
+
+test('publish builds an unsigned iOS app on macOS', { skip: process.platform !== 'darwin' }, async () => {
+  const files = [
+    { path: 'pubspec.yaml', content: 'name: publish_ios_app\n' },
+    { path: 'lib/main.dart', content: 'void main() {}\n' },
+  ];
+  const start = await fetch(`${baseUrl}/api/publish/project-ios/build`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files, target: 'ios' }),
+  });
+  assert.equal(start.status, 202);
+
+  let status: any = null;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const response = await fetch(`${baseUrl}/api/publish/project/project-ios/status`);
+    status = await response.json();
+    if (status.status === 'succeeded' || status.status === 'failed') break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(status?.status, 'succeeded', status?.logs?.slice(-6).join('\n'));
+  assert.equal(status.report.target, 'ios');
+  assert.equal(status.report.artifact.kind, 'directory');
+  assert.ok(status.report.notes.some((note: string) => /unsigned/i.test(note)));
+});
+
+test('publish rejects unsupported targets', async () => {
+  const response = await fetch(`${baseUrl}/api/publish/project-bad-target/build`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ path: 'lib/main.dart', content: 'void main() {}\n' }], target: 'tizen' }),
+  });
+  assert.equal(response.status, 400);
+});
+

@@ -23,7 +23,7 @@ import {
 import { ECONOMY_MODEL, FRONTIER_MODEL, publicRoute, routeGeneration } from './routing.js';
 import { createOrder, verifyPayment, fulfillPayment, handleRazorpayWebhook } from './razorpay.js';
 import { verifySupabaseConnection, applySupabaseMigration } from './supabase-bridge.js';
-import { handlePlatformRequest, isPlatformPath, closePlatform } from './platform/api.js';
+import { getPlatform, handlePlatformRequest, isPlatformPath, closePlatform } from './platform/api.js';
 
 seedCredentialsFromEnv();
 
@@ -762,7 +762,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     try {
       const stat = await fs.stat(file);
       res.writeHead(200, {
-        'Content-Type': 'application/vnd.android.package-archive',
+        'Content-Type': file.endsWith('.aab') ? 'application/octet-stream' : 'application/vnd.android.package-archive',
         'Content-Length': stat.size,
         'Content-Disposition': `attachment; filename="${path.basename(file)}"`,
       });
@@ -817,6 +817,18 @@ server.listen(DEFAULT_PORT, HOST, () => {
   const port = typeof address === 'object' && address ? address.port : DEFAULT_PORT;
   console.log(`flutterforge server: http://${HOST}:${port}`);
   console.log(`FlutterForge harness server listening on http://${HOST}:${port} (web dir: ${WEB_DIR})`);
+
+  // Isolation-required deployments validate the control plane (config, DB,
+  // Docker preflight) before accepting traffic; a degraded sandbox is fatal.
+  const strictIsolation = ['1', 'true', 'yes', 'on'].includes((process.env.FLUTTERFORGE_SANDBOX_REQUIRE_ISOLATION ?? '').toLowerCase());
+  if (strictIsolation) {
+    void getPlatform()
+      .then(() => console.log('flutterforge platform: isolation enforced, control plane ready'))
+      .catch((error) => {
+        console.error(`flutterforge platform: refusing to start — ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+      });
+  }
 });
 
 function shutdown(signal: string) {

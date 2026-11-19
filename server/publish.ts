@@ -9,7 +9,7 @@ import { analyzeProject, formatDiagnostic } from './harness/analyze.js';
 import { sanitizeSdkConstraint, sanitizeFlutterConstraint, fixInvalidPlainScalars, getToolchainVersions } from './harness/pubspecFix.js';
 import { dartSafeUrl, dartSafeToken } from './dartSafe.js';
 
-export const PUBLISH_TARGETS = new Set(['web', 'pwa', 'android', 'macos', 'windows']);
+export const PUBLISH_TARGETS = new Set(['web', 'pwa', 'android', 'aab', 'ios', 'macos', 'windows']);
 
 const MAX_LOG_LINES = 300;
 const BUILD_TIMEOUT_MS = Number(process.env.FLUTTERFORGE_PUBLISH_TIMEOUT_MS || 20 * 60 * 1000);
@@ -19,6 +19,8 @@ const TARGET_LABEL: Record<string, string> = {
   web: 'Web',
   pwa: 'Progressive Web App',
   android: 'Android APK',
+  aab: 'Android App Bundle',
+  ios: 'iOS app',
   macos: 'macOS app',
   windows: 'Windows app',
 };
@@ -226,12 +228,12 @@ export function createPublishService(options: { rootDir?: string } = {}) {
 
         await writePubspecFixes(directory, log);
 
-        const platform = target === 'pwa' ? 'web' : target;
+        const platform = target === 'pwa' ? 'web' : target === 'aab' ? 'android' : target;
         if (platform === 'windows' && process.platform !== 'win32') {
           throw new Error('Windows builds must run on a Windows machine. Publish Web/PWA here, or build on Windows.');
         }
-        if (platform === 'macos' && process.platform !== 'darwin') {
-          throw new Error('macOS builds must run on a Mac. Publish Web/PWA here, or build on macOS.');
+        if ((platform === 'macos' || platform === 'ios') && process.platform !== 'darwin') {
+          throw new Error(`${platform === 'ios' ? 'iOS' : 'macOS'} builds must run on a Mac. Publish Web/PWA here, or build on macOS.`);
         }
         await scaffoldPlatform(flutterBin, directory, platform, log);
 
@@ -282,6 +284,33 @@ export function createPublishService(options: { rootDir?: string } = {}) {
           await fs.access(artifactPath);
           artifactKind = 'file';
           notes.push('Install with `adb install -r app-release.apk` or sideload the file.');
+        } else if (target === 'aab') {
+          log('[publish] Building the Android App Bundle (release)…');
+          const built = await runStreaming(
+            flutterBin,
+            ['build', 'appbundle', '--release'],
+            { cwd: directory, timeoutMs: BUILD_TIMEOUT_MS, onLine: log },
+          );
+          if (!built.ok) throw new Error(`flutter build appbundle failed${built.error ? `: ${built.error}` : ''}`);
+          artifactPath = path.join(directory, 'build', 'app', 'outputs', 'bundle', 'release', 'app-release.aab');
+          await fs.access(artifactPath);
+          artifactKind = 'file';
+          notes.push('Upload app-release.aab to the Play Console. It must be signed with your upload key before Play will accept it.');
+        } else if (target === 'ios') {
+          // Signed IPAs need a distribution certificate + provisioning profile,
+          // which a build machine may not hold. Build the unsigned app here and
+          // state the signing step explicitly instead of failing opaquely.
+          log('[publish] Building the iOS app (release, unsigned)…');
+          const built = await runStreaming(
+            flutterBin,
+            ['build', 'ios', '--release', '--no-codesign'],
+            { cwd: directory, timeoutMs: BUILD_TIMEOUT_MS, onLine: log },
+          );
+          if (!built.ok) throw new Error(`flutter build ios failed${built.error ? `: ${built.error}` : ''}`);
+          artifactPath = path.join(directory, 'build', 'ios', 'iphoneos', 'Runner.app');
+          await fs.access(artifactPath);
+          artifactKind = 'directory';
+          notes.push('This build is unsigned. Sign Runner.app with your distribution certificate/provisioning profile, then export an .ipa (or run `flutter build ipa` with signing configured) before App Store / TestFlight upload.');
         } else {
           log(`[publish] Building the ${TARGET_LABEL[target]} app (release)…`);
           const built = await runStreaming(
@@ -376,6 +405,7 @@ export function createPublishService(options: { rootDir?: string } = {}) {
     const directory = sourceDir(projectId);
     const target = job.target;
     if (target === 'android') return path.join(directory, 'build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
+    if (target === 'aab') return path.join(directory, 'build', 'app', 'outputs', 'bundle', 'release', 'app-release.aab');
     return null;
   }
 

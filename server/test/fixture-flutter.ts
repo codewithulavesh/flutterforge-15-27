@@ -14,14 +14,18 @@ if (args.includes('--version')) {
 
 if (args[0] === 'create') {
   const target = args[args.length - 1];
-  const web = path.join(target, 'web');
-  await fs.mkdir(web, { recursive: true });
-  await fs.writeFile(
-    path.join(web, 'index.html'),
-    '<!DOCTYPE html><html><body><script src="flutter_bootstrap.js"></script></body></html>\n',
-    'utf8',
-  );
-  process.stdout.write('Created fixture web runner\n');
+  const platformsArg = args.find((arg) => arg.startsWith('--platforms='));
+  const platforms = platformsArg ? platformsArg.slice('--platforms='.length).split(',') : ['web'];
+  for (const platform of platforms) {
+    const dir = path.join(target, platform);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'index.html'),
+      '<!DOCTYPE html><html><body><script src="flutter_bootstrap.js"></script></body></html>\n',
+      'utf8',
+    );
+  }
+  process.stdout.write(`Created fixture runners: ${platforms.join(', ')}\n`);
   process.exit(0);
 }
 
@@ -40,6 +44,30 @@ if (args[0] === 'build' && args[1] === 'web') {
   );
   await fs.writeFile(path.join(out, 'flutter_bootstrap.js'), '// fixture\n', 'utf8');
   process.stdout.write('✓ Built build/web\n');
+  process.exit(0);
+}
+
+if (args[0] === 'build' && args[1] === 'apk') {
+  const out = path.join(process.cwd(), 'build', 'app', 'outputs', 'flutter-apk');
+  await fs.mkdir(out, { recursive: true });
+  await fs.writeFile(path.join(out, 'app-release.apk'), 'FIXTURE-APK\n', 'utf8');
+  process.stdout.write('✓ Built build/app/outputs/flutter-apk/app-release.apk\n');
+  process.exit(0);
+}
+
+if (args[0] === 'build' && args[1] === 'appbundle') {
+  const out = path.join(process.cwd(), 'build', 'app', 'outputs', 'bundle', 'release');
+  await fs.mkdir(out, { recursive: true });
+  await fs.writeFile(path.join(out, 'app-release.aab'), 'FIXTURE-AAB\n', 'utf8');
+  process.stdout.write('✓ Built build/app/outputs/bundle/release/app-release.aab\n');
+  process.exit(0);
+}
+
+if (args[0] === 'build' && args[1] === 'ios') {
+  const out = path.join(process.cwd(), 'build', 'ios', 'iphoneos', 'Runner.app');
+  await fs.mkdir(out, { recursive: true });
+  await fs.writeFile(path.join(out, 'Info.plist'), '<plist><dict/></plist>\n', 'utf8');
+  process.stdout.write('✓ Built build/ios/iphoneos/Runner.app (unsigned fixture)\n');
   process.exit(0);
 }
 

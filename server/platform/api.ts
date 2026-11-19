@@ -25,6 +25,8 @@ import { createVerifyHealWorkflow, createLiveVerifyHealDeps } from './qa/verifyA
 import { createReleaseBuildWorkflow } from './release/buildWorkflow.js';
 import { createPromptToAppWorkflow } from './generation/promptToApp.js';
 import { createAppForgeWorkflow, appForgeDefaultDeps } from './generation/forgeWorkflow.js';
+import { createReviewBoardWorkflow, readProjectFiles } from './agents/reviewWorkflow.js';
+import { createReviewContext, getAgentDefinition, listAgents, listAgentsByDepartment, runAgentCorps } from './agents/index.js';
 import { compileSpec } from './generation/spec/index.js';
 import { validateSpec } from './generation/emit/shared.js';
 import { BENCHMARKS } from './generation/quality/index.js';
@@ -39,12 +41,14 @@ import {
 import { gate as osvGate } from './security/osv.js';
 import { OtlpExporter } from './observability/otel.js';
 import { Tracer } from './observability/tracing.js';
+import { createSandboxRunner, SandboxError, type CreatedSandboxRunner } from './sandbox/index.js';
+import { sha256Hex } from './kernel/hash.js';
 import { promises as fs } from 'node:fs';
 import { buildStarterProject } from './generation/starter/index.js';
 import { snapshotFiles } from '../harness/workspace.js';
 import { verifyProject } from '../harness/verify.js';
 import { applyPatch, type PatchInput } from './patch/transaction.js';
-import { getProjectWorkspace } from '../harness/run.js';
+import { getProjectWorkspace, getWorkspacesRoot } from '../harness/run.js';
 import {
   PlatformError,
   RateLimitError,
@@ -81,12 +85,22 @@ export function getPlatform(): Promise<PlatformInstance> {
     return Promise.reject(new PlatformError({ code: 'SHUTTING_DOWN', message: 'The server is shutting down.', statusCode: 503 }));
   }
   if (!platformPromise) {
-    platformPromise = createPlatform().then((platform) => {
+    platformPromise = createPlatform().then(async (platform) => {
       platform.engine.register(createPatchApplyWorkflow(platform));
       platform.engine.register(createVerifyHealWorkflow(createLiveVerifyHealDeps({ audit: platform.audit })));
       platform.engine.register(createReleaseBuildWorkflow({ dataDir: platform.config.dataDir }));
       platform.engine.register(createPromptToAppWorkflow({ dataDir: platform.config.dataDir, transactionRoot: platform.transactionRoot }));
       platform.engine.register(createAppForgeWorkflow(appForgeDefaultDeps({ dataDir: platform.config.dataDir, transactionRoot: platform.transactionRoot })));
+      platform.engine.register(createReviewBoardWorkflow());
+      // Warm the sandbox: in isolation-required deployments a missing Docker
+      // daemon must abort startup, not first use. Everywhere else the probe
+      // runs in the background so boot latency is unchanged.
+      const sandboxReady = getSandbox(platform);
+      if (platform.config.sandbox.requireIsolation) {
+        await sandboxReady;
+      } else {
+        void sandboxReady.catch(() => undefined);
+      }
       // Resume any run whose lease expired while the process was down, and
       // execute submissions within one poll interval.
       const timer = setInterval(() => {
@@ -107,6 +121,11 @@ export async function closePlatform(): Promise<void> {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
+  }
+  if (sandboxPromise) {
+    const sandbox = await sandboxPromise.catch(() => null);
+    await sandbox?.runner.dispose?.().catch(() => undefined);
+    sandboxPromise = null;
   }
   if (!platformPromise) return;
   const platform = await platformPromise.catch(() => null);
@@ -306,6 +325,43 @@ function ensureMetering(platform: PlatformInstance): MeteringService {
   return meteringService;
 }
 
+let sandboxPromise: Promise<CreatedSandboxRunner> | null = null;
+
+/**
+ * Lazily created, process-wide sandbox runner. A failed construction (Docker
+ * missing in isolation-required mode, unusable workspace root) clears the
+ * cache so a later call can recover once the environment is fixed.
+ */
+function getSandbox(platform: PlatformInstance): Promise<CreatedSandboxRunner> {
+  if (!sandboxPromise) {
+    sandboxPromise = (async () => {
+      const workspaceRoot = getWorkspacesRoot();
+      await fs.mkdir(workspaceRoot, { recursive: true });
+      const sandbox = platform.config.sandbox;
+      const created = await createSandboxRunner({
+        mode: sandbox.mode,
+        workspaceRoot,
+        image: sandbox.dockerImage,
+        runtime: sandbox.runtime,
+        limits: { cpuCores: sandbox.cpuCores, memoryMb: sandbox.memoryMb },
+        maxConcurrent: sandbox.maxConcurrent,
+        requireIsolation: sandbox.requireIsolation,
+      });
+      if (created.describe.warning) {
+        platform.logger.warn('sandbox degraded: commands run without container isolation', {
+          warning: created.describe.warning,
+          requireIsolation: sandbox.requireIsolation,
+        });
+      }
+      return created;
+    })();
+    sandboxPromise.catch(() => {
+      sandboxPromise = null;
+    });
+  }
+  return sandboxPromise;
+}
+
 const expensiveRouteBucket = new Bucket(10, 10 / 60); // 10 per minute per principal
 const specRouteBucket = new Bucket(30, 30 / 60); // 30 per minute per principal
 
@@ -377,6 +433,7 @@ add('GET', '/api/platform/metrics', async ({ res, principal }) => {
 
 add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
   const engines = platform.engine.listDefinitions();
+  const sandbox = await getSandbox(platform).catch(() => null);
   sendJson(res, 200, {
     ok: true,
     version,
@@ -389,8 +446,16 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
       { pillar: '06', name: 'Discovery & Planning', status: 'implemented', notes: 'Deterministic prompt→AppSpec compiler (domain inference, focus-corrected entities, screens/flows/design/requirements) plus starter synthesis and optional LLM enrichment (server-side, failure-safe).' },
       { pillar: '07', name: 'Engineering & Generation', status: 'implemented', notes: '`app.forge` durable DAG: spec → zero-dependency Flutter emit (models/repos/controllers/screens) → quality rubric (A ≥ 90) → real `flutter analyze` gate → 2PC seal; byte-deterministic re-emission. Legacy recipe DAG and agent pipeline remain.' },
       { pillar: '08', name: 'Transactional Patch Engine', status: 'implemented', notes: 'Two-phase commit, per-workspace mutex/file lock, crash recovery, content-addressed revisions.' },
-      { pillar: '09', name: 'Execution Sandbox', status: 'configurable', notes: `mode=${platform.config.sandbox.mode}; policy allowlist module in flight (server/platform/sandbox).` },
+      {
+        pillar: '09',
+        name: 'Execution Sandbox',
+        status: sandbox ? (sandbox.describe.mode === 'docker' ? 'implemented' : 'degraded') : 'unavailable',
+        notes: sandbox
+          ? `effective=${sandbox.describe.mode} (requested=${sandbox.describe.requestedMode}), runtime=${platform.config.sandbox.runtime}, image=${platform.config.sandbox.dockerImage}; argv allowlist, host-path confinement, no-shell spawn, read-only container rootfs, ${platform.config.sandbox.cpuCores} CPU / ${platform.config.sandbox.memoryMb} MB caps; fail-closed with FLUTTERFORGE_SANDBOX_REQUIRE_ISOLATION=1.${sandbox.describe.warning ? ` WARNING: ${sandbox.describe.warning}` : ''}`
+          : 'The sandbox runner could not be created; see server logs.',
+      },
       { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection, visual QA gate (token compliance, accessibility, responsiveness); `verify.heal` workflow runs the closed repair loop.' },
+      { pillar: '10b', name: 'Agent Corps (review organization)', status: 'implemented', notes: '20 deterministic specialist agents across product, design, engineering, quality, delivery and intelligence; department-weighted scorecard; `review.board` durable DAG fails closed on blockers.' },
       { pillar: '11', name: 'Runtime & Preview', status: 'ported', notes: 'Preview service untouched.' },
       { pillar: '12', name: 'Release & Deployment', status: 'implemented', notes: 'release.build DAG (readiness → flutter build → artifact), artifact listing with sha256 manifests, GitHub branch/PR sync.' },
       { pillar: '13', name: 'Data & Persistence', status: 'implemented', notes: 'SQLite/WAL default + Postgres driver seam via FLUTTERFORGE_PLATFORM_DB_DRIVER=postgres; AES-256 vault for secrets; content-addressed revisions; audit chain.' },
@@ -399,7 +464,219 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
       { pillar: '16', name: 'Billing & Governance', status: 'implemented', notes: 'MeteringService with charge-before-LLM semantics, quota enforcement fail-closed in platform_settings, token_usage ledger.' },
     ],
     workflows: engines,
+    agents: {
+      count: listAgents().length,
+      departments: listAgentsByDepartment().map((department) => ({
+        department: department.department,
+        label: department.label,
+        weight: department.weight,
+        count: department.agents.length,
+      })),
+    },
   });
+});
+
+add('GET', '/api/platform/sandbox', async ({ res, platform, principal }) => {
+  requirePermission(principal, 'sandbox:execute');
+  const sandbox = await getSandbox(platform);
+  sendJson(res, 200, { ok: true, sandbox: sandbox.describe });
+});
+
+add('POST', '/api/platform/projects/:projectId/sandbox/exec', async ({ res, params, body, platform, principal }) => {
+  requirePermission(principal, 'sandbox:execute', params.projectId);
+  if (!expensiveRouteBucket.consume(`${principal.userId}:${params.projectId}:sandbox`).allowed) {
+    rateLimited.inc({ tier: 'sandbox_exec' });
+    throw new RateLimitError(60_000, { tier: 'sandbox_exec' });
+  }
+
+  const rawArgv = body?.argv;
+  const argv = Array.isArray(rawArgv) ? rawArgv.map((item: unknown) => (typeof item === 'string' ? item : '')) : null;
+  const argvValid = argv !== null
+    && argv.length > 0
+    && argv.length <= 64
+    && argv.every((item) => item.length > 0 && item.length <= 4096 && !item.includes('\0'));
+  if (!argvValid) {
+    throw new ValidationError('`argv` must be a non-empty array of 1-64 non-empty strings (no NUL bytes).', { field: 'argv' });
+  }
+
+  const workspaceRoot = path.resolve(getWorkspacesRoot());
+  const projectRoot = path.resolve(getProjectWorkspace(params.projectId));
+  if (projectRoot !== workspaceRoot && !projectRoot.startsWith(`${workspaceRoot}${path.sep}`)) {
+    throw new ValidationError('projectId resolves outside the workspace root.', { field: 'projectId' });
+  }
+  await fs.mkdir(projectRoot, { recursive: true });
+
+  const sandbox = await getSandbox(platform);
+  const startedAt = Date.now();
+  let result;
+  try {
+    result = await sandbox.runner.run({
+      argv,
+      cwd: projectRoot,
+      timeoutMs: typeof body?.timeoutMs === 'number' && Number.isFinite(body.timeoutMs) ? body.timeoutMs : undefined,
+    });
+  } catch (error) {
+    if (error instanceof SandboxError) {
+      throw new PlatformError({
+        code: error.code,
+        message: error.message,
+        statusCode: error.code === 'UNAVAILABLE' ? 503 : error.code === 'TIMEOUT' ? 504 : 422,
+        details: { ...error.details },
+      });
+    }
+    throw error;
+  }
+  const durationMs = Date.now() - startedAt;
+
+  // Audit records what ran, not the raw argv: arguments can carry deploy
+  // tokens (for example a git remote URL), and the audit chain outlives them.
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'sandbox.exec',
+    resourceType: 'project',
+    resourceId: params.projectId,
+    metadata: {
+      command: argv[0],
+      argCount: argv.length,
+      argvHash: sha256Hex(JSON.stringify(argv)),
+      exitCode: result.exitCode,
+      signal: result.signal,
+      durationMs,
+      mode: sandbox.describe.mode,
+    },
+  });
+
+  const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n…[truncated ${text.length - max} chars]` : text);
+  sendJson(res, 200, {
+    ok: result.exitCode === 0,
+    mode: sandbox.describe.mode,
+    exitCode: result.exitCode,
+    signal: result.signal,
+    durationMs,
+    stdout: clip(result.stdout, 200_000),
+    stderr: clip(result.stderr, 100_000),
+  });
+});
+
+add('GET', '/api/platform/agents', async ({ res, principal }) => {
+  requirePermission(principal, 'project:read');
+  sendJson(res, 200, {
+    ok: true,
+    count: listAgents().length,
+    agents: listAgents(),
+    departments: listAgentsByDepartment(),
+  });
+});
+
+add('GET', '/api/platform/agents/:agentId', async ({ res, params, principal }) => {
+  requirePermission(principal, 'project:read');
+  const agent = getAgentDefinition(params.agentId);
+  if (!agent) {
+    throw new PlatformError({ code: 'AGENT_NOT_FOUND', message: `No agent with id "${params.agentId}".`, statusCode: 404 });
+  }
+  const { run: _run, ...summary } = agent;
+  sendJson(res, 200, { ok: true, agent: summary });
+});
+
+function parseAgentIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = value.filter((item): item is string => typeof item === 'string' && item.trim() !== '').map((item) => item.trim());
+  return ids.length > 0 ? ids : undefined;
+}
+
+add('POST', '/api/platform/agents/review', async ({ res, body, platform, principal }) => {
+  if (!specRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'agent_review' });
+    throw new RateLimitError(60_000, { tier: 'agent_review' });
+  }
+  requirePermission(principal, 'project:write');
+  const files = body?.files;
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new ValidationError('`files[]` is required.', { field: 'files' });
+  }
+  const normalised = files.slice(0, 5000).map((file: any) => ({
+    path: String(file?.path ?? ''),
+    content: String(file?.content ?? ''),
+  }));
+  const projectId = typeof body?.projectId === 'string' && body.projectId.trim() ? body.projectId.trim() : 'inline';
+  const prompt = typeof body?.prompt === 'string' ? body.prompt : undefined;
+
+  let scorecard;
+  try {
+    scorecard = await runAgentCorps(createReviewContext({ projectId, files: normalised, prompt }), {
+      agentIds: parseAgentIds(body?.agentIds),
+      excludeInfo: body?.excludeInfo === true,
+    });
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : String(error), { field: 'agentIds' });
+  }
+
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'agents.review',
+    resourceType: 'project',
+    resourceId: projectId,
+    metadata: {
+      verdict: scorecard.verdict,
+      score: scorecard.overallScore,
+      agents: scorecard.stats.agents,
+      findings: scorecard.stats.findings,
+      blockers: scorecard.stats.blockers,
+      files: scorecard.stats.filesReviewed,
+    },
+  });
+
+  sendJson(res, 200, { ok: scorecard.verdict !== 'fail', scorecard });
+});
+
+add('POST', '/api/platform/projects/:projectId/agents/review', async ({ res, params, body, platform, principal }) => {
+  if (!specRouteBucket.consume(principal.userId).allowed) {
+    rateLimited.inc({ tier: 'agent_review' });
+    throw new RateLimitError(60_000, { tier: 'agent_review' });
+  }
+  requirePermission(principal, 'project:read', params.projectId);
+  const files = await readProjectFiles(params.projectId).catch((error) => {
+    if (error instanceof PlatformError) throw error;
+    throw new PlatformError({
+      code: 'AGENT_REVIEW_SNAPSHOT_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+      statusCode: 500,
+    });
+  });
+
+  let scorecard;
+  try {
+    scorecard = await runAgentCorps(createReviewContext({
+      projectId: params.projectId,
+      files,
+      prompt: typeof body?.prompt === 'string' ? body.prompt : undefined,
+    }), {
+      agentIds: parseAgentIds(body?.agentIds),
+      excludeInfo: body?.excludeInfo === true,
+    });
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : String(error), { field: 'agentIds' });
+  }
+
+  await platform.audit.append({
+    tenantId: principal.tenantId,
+    actor: principal.userId,
+    action: 'agents.review',
+    resourceType: 'project',
+    resourceId: params.projectId,
+    metadata: {
+      verdict: scorecard.verdict,
+      score: scorecard.overallScore,
+      agents: scorecard.stats.agents,
+      findings: scorecard.stats.findings,
+      blockers: scorecard.stats.blockers,
+      files: scorecard.stats.filesReviewed,
+    },
+  });
+
+  sendJson(res, 200, { ok: scorecard.verdict !== 'fail', scorecard });
 });
 
 add('GET', '/api/platform/workflows/definitions', async ({ res, platform, principal }) => {

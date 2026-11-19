@@ -10,6 +10,7 @@
  */
 import {
   DEFAULT_LIMITS,
+  SandboxError,
   normalizeLimits,
   type SandboxLimits,
   type SandboxRunner,
@@ -100,6 +101,11 @@ export interface CreateSandboxRunnerConfig {
   maxConcurrent?: number;
   /** Per-stream capture cap in bytes. Default: 4 MiB. */
   maxOutputBytes?: number;
+  /**
+   * Refuse to degrade. When true, `local` mode is rejected outright and a
+   * missing Docker daemon throws instead of falling back to host execution.
+   */
+  requireIsolation?: boolean;
 }
 
 export interface SandboxRunnerDescription {
@@ -167,13 +173,21 @@ function describeDocker(
  * - `docker`: Docker when the daemon answers `docker version`; otherwise a
  *   local runner with `describe.warning` set (the caller decides whether the
  *   degraded isolation is acceptable). Never throws solely because Docker is
- *   missing.
- * - `auto` (default): Docker when available, local otherwise.
+ *   missing — unless `requireIsolation` is set, in which case it throws.
+ * - `auto` (default): Docker when available, local otherwise (with a warning).
+ *
+ * With `requireIsolation: true` there is no degraded path: `local` mode and a
+ * missing Docker daemon both throw a `SandboxError('UNAVAILABLE')`, so a
+ * production deployment fails fast instead of quietly running untrusted
+ * commands on the host.
  *
  * Nothing is logged from here; observability is the caller's job.
  */
 export async function createSandboxRunner(config: CreateSandboxRunnerConfig = {}): Promise<CreatedSandboxRunner> {
   const requestedMode = config.mode ?? 'auto';
+  if (config.requireIsolation && requestedMode === 'local') {
+    throw new SandboxError('UNAVAILABLE', 'Isolation is required, but the sandbox mode is "local" (host process execution). Set FLUTTERFORGE_SANDBOX=docker or auto.');
+  }
   const workspaceRoot = config.workspaceRoot ?? process.cwd();
   const limits = normalizeLimits(config.limits ?? DEFAULT_LIMITS);
   const image = config.image ?? process.env.FLUTTERFORGE_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
@@ -209,15 +223,14 @@ export async function createSandboxRunner(config: CreateSandboxRunnerConfig = {}
     return describeDocker(docker, requestedMode, limits);
   }
 
-  if (requestedMode === 'docker') {
-    return describeLocal(
-      makeLocal(),
-      requestedMode,
-      limits,
-      'Docker is unavailable; fell back to the local process sandbox. Commands run without container isolation.',
-    );
+  if (config.requireIsolation) {
+    throw new SandboxError('UNAVAILABLE', 'Isolation is required, but the Docker daemon is unavailable. Start Docker or unset FLUTTERFORGE_SANDBOX_REQUIRE_ISOLATION.');
   }
 
-  // auto: silent fallback to local.
-  return describeLocal(makeLocal(), requestedMode, limits);
+  return describeLocal(
+    makeLocal(),
+    requestedMode,
+    limits,
+    'Docker is unavailable; fell back to the local process sandbox. Commands run without container isolation.',
+  );
 }

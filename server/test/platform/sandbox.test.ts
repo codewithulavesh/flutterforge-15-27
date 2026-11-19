@@ -550,14 +550,35 @@ describe('createSandboxRunner factory', () => {
     await created.runner.dispose?.();
   });
 
-  test('mode=auto returns a usable runner regardless of docker presence', { timeout: 15000 }, async () => {
+  test('mode=auto falls back to local with a visible warning', { timeout: 15000 }, async () => {
     const created = await createSandboxRunner({ mode: 'auto', workspaceRoot });
     assert.ok(created.describe.mode === 'local' || created.describe.mode === 'docker');
     if (created.describe.mode === 'local') {
+      assert.match(created.describe.warning ?? '', /docker/i);
       const result = await created.runner.run({ argv: ['echo', 'auto-ok'] });
       assert.equal(result.exitCode, 0);
     }
     await created.runner.dispose?.();
+  });
+
+  test('requireIsolation rejects local mode outright', async () => {
+    await assert.rejects(
+      () => createSandboxRunner({ mode: 'local', workspaceRoot, requireIsolation: true }),
+      (error: unknown) => error instanceof SandboxError && error.code === 'UNAVAILABLE' && /isolation is required/i.test(error.message),
+    );
+  });
+
+  test('requireIsolation never silently degrades to host execution', { timeout: 15000 }, async () => {
+    try {
+      const created = await createSandboxRunner({ mode: 'auto', workspaceRoot, requireIsolation: true });
+      // Docker is present: the runner must honour the isolation requirement.
+      assert.equal(created.describe.mode, 'docker');
+      await created.runner.dispose?.();
+    } catch (error) {
+      assert.ok(error instanceof SandboxError);
+      assert.equal(error.code, 'UNAVAILABLE');
+      assert.match(error.message, /docker/i);
+    }
   });
 });
 

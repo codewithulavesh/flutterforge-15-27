@@ -155,7 +155,7 @@ export function StatusChip({
   tone,
   children,
 }: {
-  tone: 'live' | 'neutral' | 'warn';
+  tone: 'live' | 'neutral' | 'warn' | 'danger';
   children: ReactNode;
 }) {
   return (
@@ -165,6 +165,7 @@ export function StatusChip({
         tone === 'live' && 'bg-emerald-500/12 text-emerald-500',
         tone === 'neutral' && 'border border-[var(--fb-line)] text-[var(--fb-dim)]',
         tone === 'warn' && 'bg-amber-500/12 text-amber-500',
+        tone === 'danger' && 'bg-rose-500/12 text-rose-500',
       )}
     >
       {children}

@@ -55,12 +55,15 @@ test('capabilities endpoint reports the implemented pillars', async () => {
   const body = await json(response);
   assert.equal(response.status, 200);
   const pillars = body.pillars as Array<{ pillar: string; status: string }>;
-  assert.ok(pillars.length === 16);
+  assert.equal(pillars.length, 17);
   assert.equal(pillars.find((p) => p.pillar === '04')?.status, 'implemented');
   assert.equal(pillars.find((p) => p.pillar === '08')?.status, 'implemented');
+  assert.equal(pillars.find((p) => p.pillar === '10b')?.status, 'implemented');
   assert.equal(pillars.find((p) => p.pillar === '15')?.status, 'implemented');
   const names = (body.workflows as Array<{ name: string }>).map((w) => w.name);
   assert.ok(names.includes('patch.apply'));
+  assert.ok(names.includes('review.board'));
+  assert.equal(body.agents?.count, 20);
 });
 
 test('metrics endpoint exposes Prometheus text', async () => {
@@ -178,6 +181,41 @@ test('unknown platform route is a structured 404, not a stack trace', async () =
   assert.equal(response.status, 404);
   const body = await json(response);
   assert.equal(body.error.code, 'NOT_FOUND');
+});
+
+test('sandbox status reports the configured isolation mode', async () => {
+  const response = await fetch(`${base}/api/platform/sandbox`);
+  assert.equal(response.status, 200);
+  const body = await json(response);
+  assert.equal(body.ok, true);
+  assert.ok(['local', 'docker'].includes(body.sandbox.mode));
+  assert.ok(['auto', 'docker', 'local'].includes(body.sandbox.requestedMode));
+});
+
+test('sandbox exec runs an allowlisted command inside the project workspace', async () => {
+  const response = await fetch(`${base}/api/platform/projects/itest-sandbox/sandbox/exec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ argv: ['echo', 'sandbox-ok'] }),
+  });
+  assert.equal(response.status, 200);
+  const body = await json(response);
+  assert.equal(body.ok, true);
+  assert.equal(body.exitCode, 0);
+  assert.match(body.stdout, /sandbox-ok/);
+  const projectDir = path.join(process.env.FLUTTERFORGE_WORKSPACES!, 'itest-sandbox');
+  assert.equal(await fs.access(projectDir).then(() => true).catch(() => false), true);
+});
+
+test('sandbox exec rejects executables outside the allowlist', async () => {
+  const response = await fetch(`${base}/api/platform/projects/itest-sandbox/sandbox/exec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ argv: ['sh', '-c', 'id'] }),
+  });
+  assert.equal(response.status, 422);
+  const body = await json(response);
+  assert.equal(body.error.code, 'POLICY_DENIED');
 });
 
 test('patch with an invalid JSON body is a structured 400', async () => {

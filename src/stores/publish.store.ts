@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type PublishTarget = 'web' | 'pwa' | 'android' | 'macos' | 'windows';
+export type PublishTarget = 'web' | 'pwa' | 'android' | 'aab' | 'ios' | 'macos' | 'windows';
 
 interface PublishArtifact {
   kind: 'file' | 'directory';
