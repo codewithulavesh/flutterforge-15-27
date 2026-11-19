@@ -6,17 +6,9 @@ import { ServerResponse } from 'node:http';
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  // Any VITE_* provider key is inlined into the public client bundle by design
-  // (Vite statically replaces import.meta.env.*). Warn loudly at build time so a
-  // production/CI build never silently ships a live key. Rotate any key that
-  // appears in built assets.
-  for (const name of Object.keys(env)) {
-    if (/^VITE_(OPENROUTER|DEEPSEEK|OPENAI|ANTHROPIC)/.test(name) && env[name]?.trim()) {
-      console.warn(`\n⚠️  ${name} is set — it will be embedded in the public client bundle and visible to every user. Use server-side secrets (.env.local without the VITE_ prefix) for anything private.\n`);
-    }
-  }
   return {
   plugins: [react()],
+  envPrefix: ['VITE_SUPABASE_', 'VITE_HARNESS_', 'VITE_PREVIEW_', 'VITE_RAZORPAY_', 'VITE_APP_', 'VITE_FLUTTERPAD_URL'],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -28,6 +20,8 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5173,
     strictPort: false,
+    watch: { ignored: ['**/.flutterforge/**'] },
+    fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.flutterforge/**'] },
     proxy: {
       // Local DeepSeek Harness engine (npm run server / Electron main).
       '/api': {

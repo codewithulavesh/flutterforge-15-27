@@ -191,4 +191,12 @@ export const PLATFORM_MIGRATIONS: readonly Migration[] = [
         ON project_memory (tenant_id, project_id, created_at DESC);
     `,
   },
+  {
+    id: '0004_project_connectors',
+    up: `CREATE TABLE IF NOT EXISTS project_connectors (
+      tenant_id TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL,
+      resource TEXT NOT NULL, metadata_json TEXT NOT NULL, synced_at TEXT NOT NULL, revision TEXT NOT NULL,
+      PRIMARY KEY (tenant_id, project_id, kind)
+    );`,
+  },
 ];

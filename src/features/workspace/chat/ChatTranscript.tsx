@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown } from 'lucide-react';
+import { MessageAction, MessageActions } from '@/components/ai-elements/message';
+import { ArrowDown, Copy, RotateCcw } from 'lucide-react';
 import { ChatMessage, type ChatRole } from './ChatMessage';
 import './chat.css';
 
@@ -14,6 +15,7 @@ export interface TranscriptMessage {
 
 export interface ChatTranscriptProps {
   messages: TranscriptMessage[];
+  onRegenerate?: (prompt: string) => void;
   /** Called after the user activates "jump to latest". The integrator can use it to clear unread badges, etc. */
   onScrollToBottom?: () => void;
 }
@@ -28,7 +30,7 @@ const BOTTOM_THRESHOLD_PX = 200;
  * user has scrolled up more than 200px from the bottom. While unpinned a
  * "jump to latest" button is shown; activating it re-pins and scrolls down.
  */
-export function ChatTranscript({ messages, onScrollToBottom }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, onScrollToBottom, onRegenerate }: ChatTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const [pinned, setPinned] = useState(true);
@@ -63,6 +65,14 @@ export function ChatTranscript({ messages, onScrollToBottom }: ChatTranscriptPro
     onScrollToBottom?.();
   };
 
+  const [copyStatus, setCopyStatus] = useState('');
+  async function copyMessage(content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyStatus('Response copied');
+    } catch { setCopyStatus('Clipboard unavailable. Select the response text to copy it.'); }
+  }
+  const lastUser = messages.filter(message => message.role === 'user').at(-1);
   const showJumpButton = !pinned && messages.length > 0;
 
   return (
@@ -84,9 +94,15 @@ export function ChatTranscript({ messages, onScrollToBottom }: ChatTranscriptPro
             isStreaming={message.isStreaming}
             stopped={message.stopped}
             timestamp={message.timestamp}
-          />
+          >
+            {message.role === 'assistant' && !message.isStreaming && <MessageActions className="studio-message-actions">
+              <MessageAction label="Copy response" title="Copy response" onClick={() => void copyMessage(message.content)}><Copy size={14} /></MessageAction>
+              {onRegenerate && lastUser && message === messages.at(-1) && <MessageAction label="Retry last request" title="Retry last request" onClick={() => onRegenerate(lastUser.content)}><RotateCcw size={14} /></MessageAction>}
+            </MessageActions>}
+          </ChatMessage>
         ))}
       </div>
+      <span role="status" className="sr-only">{copyStatus}</span>
       {showJumpButton && (
         <button
           type="button"

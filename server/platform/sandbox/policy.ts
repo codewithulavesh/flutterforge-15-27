@@ -292,7 +292,7 @@ function checkFlagOrPub(
 }
 
 function checkFlutter(args: string[]): SubcommandVerdict {
-  return checkFlagOrPub(args, FLUTTER_FLAG_ALLOWS, PUB_VERBS, ['analyze', 'test', 'build', 'doctor']);
+  return checkFlagOrPub(args, FLUTTER_FLAG_ALLOWS, PUB_VERBS, ['analyze', 'test', 'build', 'doctor', 'create', 'clean']);
 }
 
 function checkDart(args: string[]): SubcommandVerdict {

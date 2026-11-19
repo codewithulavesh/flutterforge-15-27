@@ -1,0 +1,26 @@
+.generator-panel,.generator-dialog {--gen-line:var(--studio-line,#38424b);--gen-muted:var(--studio-muted,#a3adb6);--gen-surface:var(--studio-surface,#181d22);--gen-text:var(--studio-text,#eef2f5);--gen-accent:var(--studio-accent,#b8eaa0);color:var(--gen-text);background:var(--gen-surface)}
+[data-theme="light"] :is(.generator-panel,.generator-dialog) {--gen-line:#d6dbdf;--gen-muted:#52616b;--gen-surface:#fff;--gen-text:#20272c;--gen-accent:#437035}
+.generator-dialog {width:min(94vw,640px);max-width:640px;max-height:88dvh;display:flex;flex-direction:column;border-color:var(--gen-line);border-radius:16px}
+.generator-panel {display:flex;flex-direction:column;height:100%;overflow:auto;min-height:0;padding:clamp(14px,3vw,32px)}
+.generator-dialog .generator-panel {padding:0 4px 0 0}
+.generator-panel :is(.generator-tabs,[role=tabpanel]) {max-width:760px;margin-inline:auto}
+.generator-tabs {display:flex;width:fit-content;background:transparent;gap:4px;border:1px solid var(--gen-line);border-radius:10px;padding:3px}
+.generator-tabs [role=tab] {color:var(--gen-muted);gap:6px;padding:6px 12px}
+.generator-tabs [role=tab][aria-selected=true] {color:var(--gen-text);background:color-mix(in srgb,var(--gen-text) 10%,var(--gen-surface))}
+.generator-preferences {padding-top:18px}
+.generator-preferences h3 {font-size:20px;font-weight:600;letter-spacing:-.025em}
+.generator-preferences header p,.generator-preferences small {display:block;color:var(--gen-muted);font-size:13px;line-height:1.5}
+.generator-selection,.generator-option label {display:flex;align-items:center;justify-content:space-between;gap:18px}
+.generator-selection {margin:18px 0 7px;font-size:12px;color:var(--gen-muted)}
+.generator-preferences button {text-decoration:underline;text-underline-offset:3px}
+.generator-options {border:1px solid var(--gen-line);border-radius:12px;overflow:hidden}
+.generator-option {padding:14px 16px}
+.generator-option+.generator-option {border-top:1px solid var(--gen-line)}
+.generator-option label,.generator-option summary {cursor:pointer}
+.generator-option label strong {font-size:14px;font-weight:600}
+.generator-option input {width:18px;height:18px;accent-color:var(--gen-accent);flex-shrink:0}
+.generator-option details {margin-top:6px;font-size:12px;color:var(--gen-muted)}
+.generator-option ul {list-style:disc;padding:6px 0 0 20px}
+.generator-save {font-size:12px;min-height:20px;padding-top:6px;color:var(--gen-muted)}
+
+.generator-panel [role=tabpanel] {width:100%}

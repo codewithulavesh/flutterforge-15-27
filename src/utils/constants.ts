@@ -143,6 +143,7 @@ export const SIDEBAR_SECTIONS = [
     items: [
       { id: 'versions', label: 'Versions', icon: 'History' },
       { id: 'revisions', label: 'Revisions', icon: 'GitBranch' },
+      { id: 'generator', label: 'Generator', icon: 'SlidersHorizontal' },
       { id: 'settings', label: 'Settings', icon: 'Settings' },
       { id: 'export', label: 'Export', icon: 'Download' },
     ],

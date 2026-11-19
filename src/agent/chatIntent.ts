@@ -1,4 +1,4 @@
-import { callLLMText, type LLMMessage } from '../agents/llmClient';
+import { callLLMText, type LLMMessage } from './llmClient';
 import {
   type AssistantIntent,
   type IntentDecision,

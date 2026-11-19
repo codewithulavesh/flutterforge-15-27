@@ -1,3 +1,4 @@
+import { executeEngineer, engineerRequest, EngineerRequestError } from '@/agent/engineClient';
 import { create } from 'zustand';
 import { supabase } from '@/services/supabase';
 import type { Project, ProjectFile, ProjectVersion, AIConversation, AIMessage, GenerationTask, Build, Dependency, Deployment, FileChange } from '@/types';
@@ -357,25 +358,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   }),
 
   loadFiles: async (projectId) => {
-    const { data, error } = await supabase
-      .from('project_files')
-      .select('*')
-      .eq('project_id', projectId)
-      .order('path', { ascending: true });
-    if (error) {
-      set({ error: error.message });
+    try {
+      const snapshot = await engineerRequest<{ files: Array<{ path: string; content: string }> }>(projectId, 'files');
+      if (get().currentProject?.id !== projectId) return;
+      const now = new Date().toISOString();
+      set({ files: snapshot.files.map(file => ({ id: `local-engine-${file.path}`, project_id: projectId, ...file,
+        is_directory: false, file_type: file.path.split('.').pop() ?? null, created_at: now, updated_at: now })) });
       return;
+    } catch (error) {
+      // A never-started project still lives in Supabase. Offline engine errors remain visible.
+      if (!(error instanceof EngineerRequestError && error.status === 404)) set({ error: error instanceof Error ? error.message : 'Engine unavailable.' });
     }
-    // Never clobber the file list the user is looking at with a project they
-    // switched away from mid-run (background generations write to the DB and
-    // call this when they finish).
-    if (get().currentProject?.id !== projectId) {
-      return;
-    }
-    set({ files: (data as ProjectFile[]) ?? [] });
+    const { data, error } = await supabase.from('project_files').select('*').eq('project_id', projectId).order('path', { ascending: true });
+    if (error) { set({ error: error.message }); return; }
+    if (get().currentProject?.id === projectId) set({ files: (data as ProjectFile[]) ?? [] });
   },
 
   saveFile: async (projectId, path, content) => {
+    const expected = get().files.find(file => file.path === path && file.project_id === projectId)?.content ?? null;
+    let engineSaved = false;
+    try { await engineerRequest(projectId, 'edit-file', { path, content, expectedContent: expected }); engineSaved = true; }
+    catch (error) { if (!(error instanceof EngineerRequestError && error.status === 404)) throw error; }
+
     const applyLocal = () =>
       set((state) => ({
         files: state.files.map((f) =>
@@ -387,7 +391,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const existing = get().files.find((f) => f.project_id === projectId && f.path === path);
     if (existing?.id.startsWith('local-')) {
       applyLocal();
-      return false;
+      return engineSaved;
     }
     const { error } = await supabase
       .from('project_files')
@@ -406,6 +410,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   createFile: async (projectId, path, content, isDirectory = false) => {
+    let engineSaved = false;
+    try {
+      if (isDirectory) {
+        await engineerRequest(projectId, 'state');
+        throw new Error('Create a file inside the new folder; engine folders are created automatically.');
+      }
+      await engineerRequest(projectId, 'edit-file', { path, content, expectedContent: null }); engineSaved = true;
+    } catch (error) { if (!(error instanceof EngineerRequestError && error.status === 404)) throw error; }
     const ext = path.split('.').pop() ?? '';
     const { data, error } = await supabase
       .from('project_files')
@@ -431,13 +443,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         updated_at: new Date().toISOString(),
       };
       set((state) => ({ files: [...state.files.filter(f => f.path !== path), fallbackFile] }));
-      return false;
+      return engineSaved;
     }
     set((state) => ({ files: [...state.files.filter(f => f.path !== path), data as ProjectFile] }));
     return true;
   },
 
   deleteFile: async (projectId, path) => {
+    let engineSaved = false;
+    const existing = get().files.find(file => file.project_id === projectId && file.path === path);
+    try { await engineerRequest(projectId, 'edit-file', { path, content: null, expectedContent: existing?.content ?? null }); engineSaved = true; }
+    catch (error) { if (!(error instanceof EngineerRequestError && error.status === 404)) throw error; }
     const { error } = await supabase
       .from('project_files')
       .delete()
@@ -445,7 +461,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       .eq('path', path);
     if (error) {
       set({ error: error.message });
-      return false;
+      if (!engineSaved) return false;
     }
     set((state) => ({
       files: state.files.filter((f) => !(f.project_id === projectId && f.path === path)),
@@ -454,11 +470,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   renameFile: async (projectId, oldPath, newPath) => {
-    await supabase
+    const existing = get().files.find(file => file.project_id === projectId && file.path === oldPath);
+    let engineSaved = false;
+    try { await engineerRequest(projectId, 'edit-file', { path: oldPath, content: null, expectedContent: existing?.content ?? null, destination: newPath }); engineSaved = true; }
+    catch (error) { if (!(error instanceof EngineerRequestError && error.status === 404)) throw error; }
+    const { error } = await supabase
       .from('project_files')
       .update({ path: newPath, updated_at: new Date().toISOString() })
       .eq('project_id', projectId)
       .eq('path', oldPath);
+    if (error && !engineSaved) throw new Error(error.message);
+    if (error) set({ error: 'File renamed in the engine; cloud sync failed.' });
     set((state) => ({
       files: state.files.map((f) =>
         f.project_id === projectId && f.path === oldPath ? { ...f, path: newPath } : f
@@ -505,666 +527,61 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   })()),
 
   sendMessage: async (projectId, content, onProgress, opts) => {
-    let conv = get().conversation;
-    if (!conv || conv.project_id !== projectId) {
-      await get().loadConversation(projectId);
-      conv = get().conversation;
-    }
-    if (!conv) {
-      throw new Error('Chat is still loading. Please try again in a moment.');
-    }
-
-    // Duplicate-send guard (store level): the panel already guards with a
-    // ref, but auto-start effects, retries, or a second open tab can still
-    // enter concurrently. One in-flight generation per conversation.
-    // Returns mode 'duplicate' (NOT a 0-file success) so the UI reports it
-    // honestly instead of "Generation complete — 0 files".
-    if (inFlightSends.has(conv.id)) {
-      onProgress?.('Generation already in progress — ignoring duplicate send.');
-      return { mode: 'duplicate' as const };
-    }
-    inFlightSends.add(conv.id);
+    if (activeSendProjects.has(projectId)) return { mode: 'duplicate' };
     activeSendProjects.add(projectId);
     set({ generatingIn: projectId });
-    return runBody().finally(() => {
-      inFlightSends.delete(conv.id);
-      activeSendProjects.delete(projectId);
-      set({ generatingIn: null });
-      // Repairs requested during the run must execute only after this lock is
-      // released, otherwise sendMessage returns `duplicate` and the repair is
-      // silently lost while the UI reports success.
-      setTimeout(() => { void flushQueuedRepair(projectId); }, 0);
-    });
-
-    // Original send flow, unchanged — nested so it keeps closure access to
-    // get()/set() and `finally` above always releases the guard.
-    async function runBody(): Promise<SendMessageResult> {
-      let conv = get().conversation;
-      if (!conv || conv.project_id !== projectId) {
-        await get().loadConversation(projectId);
-        conv = get().conversation;
-      }
-      if (!conv) {
-        throw new Error('Chat is still loading. Please try again in a moment.');
-      }
-
-      const userMessage: AIMessage = {
-        id: crypto.randomUUID(),
-        conversation_id: conv.id,
-        role: 'user',
-        content,
-        tool_calls: null,
-        changed_files: null,
-        metadata: {},
-        created_at: new Date().toISOString(),
-      };
-      set((state) => ({ messages: [...state.messages, userMessage] }));
-
-      // Persist immediately, but don't make a network round-trip sit in front of
-      // the generation request. The model run usually gives this insert plenty
-      // of time to finish; we await it before saving the assistant reply so the
-      // conversation stays ordered.
-      const userMessageSaved = (async () => {
-        try {
-          const { error } = await supabase.from('ai_messages').insert({
-            conversation_id: conv.id,
-            role: 'user',
-            content,
-          });
-          if (error) console.warn('Could not persist user message:', error.message);
-        } catch (error) {
-          console.warn('Could not persist user message:', error);
-        }
-      })();
-
+    try {
+      if (get().conversation?.project_id !== projectId) await get().loadConversation(projectId);
+      const conversation = get().conversation;
       const project = get().currentProject;
-      if (!project) {
-        throw new Error('Project is still loading. Please try again in a moment.');
-      }
-
-      const forceBuild = opts?.isInitialGeneration === true || opts?.isRepair === true;
-      const previewSession = usePreviewStore.getState().getSession(projectId);
-      const intentDecision = forceBuild
-        ? { intent: 'feature' as const, confidence: 1.0, reason: 'Forced build generation', source: 'structural' as const }
-        : await detectChatIntent(content, {
-            apiKey: safePoolKey() || '',
-            model: opts?.modelPreference === 'quality' ? FRONTIER_MODEL : ECONOMY_MODEL,
-            signal: opts?.signal,
-            projectFiles: get().files.map((f) => f.path),
-            hasErrors: Boolean(previewSession?.status === 'failed'),
-          });
-
-      const isBuilderAction = forceBuild || BUILDER_INTENTS.has(intentDecision.intent);
-
-      const emitChatEvent = (event: ChatEvent) => {
-        opts?.onChatEvent?.(event);
-        useActivityStore.getState().ingestChatEvent(event);
+      if (!conversation || !project || project.id !== projectId) throw new Error('Project conversation is not ready.');
+      const addMessage = async (role: 'user' | 'assistant', text: string, changes: FileChange[] = []) => {
+        const message: AIMessage = { id: crypto.randomUUID(), conversation_id: conversation.id, role,
+          content: text, tool_calls: null, changed_files: changes, metadata: {}, created_at: new Date().toISOString() };
+        if (get().currentProject?.id === projectId) set(state => ({ messages: [...state.messages, message] }));
+        const { error } = await supabase.from('ai_messages').insert({ conversation_id: conversation.id, role, content: text, changed_files: changes });
+        if (error) onProgress?.('Message is visible locally; conversation sync failed.');
       };
-
-      if (!isBuilderAction) {
-        onProgress?.('Answering your question...');
-        const chatContext = ChatContextHandler.build({
-          projectName: project.name,
-          projectDescription: project.description,
-          files: get().files,
-          messages: get().messages.slice(0, -1),
-          activeFile: useWorkspaceStore.getState().activeFile,
-          buildErrors: previewSession?.logs ?? [],
-          question: content,
-          attachedFiles: opts?.attachedFiles ?? [],
-          intent: intentDecision.intent,
-        });
-        const replyResult = await executeChatTurn(content, {
-          projectName: project.name,
-          projectSummary: chatContext.summary,
-          projectContext: chatContext.projectContext,
-          formattedContext: chatContext.formattedPromptContext,
-          history: chatContext.history,
-          historySummary: chatContext.historySummary,
-          apiKey: safePoolKey() || '',
-          model: opts?.modelPreference === 'quality'
-            ? 'nvidia/nemotron-3-ultra-550b-a55b:free'
-            : 'nvidia/nemotron-3.5-lightning:free',
-          intent: intentDecision.intent,
-          onProgress,
-          onToken: opts?.onToken,
-          onRetry: opts?.onRetry,
-          onEvent: emitChatEvent,
-          signal: opts?.signal,
-        });
-
-        if (!replyResult.ok) {
-          const chatError = new ChatError(replyResult.error);
-          useTerminalStore.getState().setGenerationError(replyResult.error.message);
-          throw chatError;
+      await addMessage('user', content);
+      const request = opts?.attachedFiles?.length ? `${content}\n\nFocus on these project files: ${opts.attachedFiles.join(', ')}` : content;
+      const result = await executeEngineer(request, {
+        projectId, projectName: project.name,
+        files: get().files.filter(file => !file.is_directory).map(({ path, content }) => ({ path, content })),
+      }, { signal: opts?.signal, onProgress, onToken: opts?.onToken,
+        onEvent: event => opts?.onEvent?.(event),
+        onEngineEvent: event => { if (event.type === 'file') void get().loadFiles(projectId); }, onFile: file => opts?.onFile?.(file) });
+      const changes: FileChange[] = result.files.map(file => ({ path: file.path, action: file.action ?? 'modified', content: file.content }));
+      // Keep authoritative backend output even when verification fails. Never rewrite it after verification.
+      const now = new Date().toISOString();
+      if (get().currentProject?.id === projectId) set(state => {
+        const byPath = new Map(state.files.map(file => [file.path, file]));
+        for (const change of changes) {
+          if (change.action === 'deleted') byPath.delete(change.path);
+          else byPath.set(change.path, { id: byPath.get(change.path)?.id ?? `local-${crypto.randomUUID()}`, project_id: projectId,
+            path: change.path, content: change.content ?? '', file_type: change.path.split('.').pop() ?? null,
+            is_directory: false, created_at: byPath.get(change.path)?.created_at ?? now, updated_at: now });
         }
-
-        const reply = replyResult.text;
-        const projectUsesSupabase = get().files.some((file) => !file.is_directory && (
-          file.path.startsWith('supabase/') || /supabase_flutter|Supabase\.initialize|SupabaseService/.test(file.content)
-        ));
-        const chatPrompts = generateNextActionPrompts(content, [], projectUsesSupabase);
-        const chatMessage: AIMessage = {
-          id: crypto.randomUUID(),
-          conversation_id: conv.id,
-          role: 'assistant',
-          content: reply,
-          tool_calls: null,
-          changed_files: [],
-          metadata: {
-            chatOnly: true,
-            intent: intentDecision.intent,
-            nextActionPrompts: chatPrompts,
-          },
-          created_at: new Date().toISOString(),
-        };
-        set((state) => ({ messages: [...state.messages, chatMessage] }));
-        await userMessageSaved;
-        await supabase.from('ai_messages').insert({
-          conversation_id: conv.id,
-          role: 'assistant',
-          content: reply,
-          changed_files: [],
-          metadata: { chatOnly: true, intent: intentDecision.intent, nextActionPrompts: chatPrompts },
-        });
-        onProgress?.('Answered — project files untouched');
-        return { mode: 'chat' as const, intent: intentDecision.intent };
-      }
-
-      const isFirstPrompt = get().messages.length === 1;
-      const hasStarterOnly = get().files.length > 0 && get().files.length <= 6;
-      // An explicit flag (e.g. from the creation wizard's first prompt) always
-      // wins: file-counting alone misclassifies templates with 7+ starter files.
-      const isInitialGen = opts?.isInitialGeneration ?? (isFirstPrompt || hasStarterOnly);
-      const isSurgicalEdit = !isInitialGen && (opts?.isEdit || intentDecision.intent === 'modify' || intentDecision.intent === 'debug' || intentDecision.intent === 'refactor');
-
-      const runId = crypto.randomUUID();
-      emitChatEvent({ type: 'message.started', runId, intent: intentDecision.intent });
-      emitChatEvent({
-        type: 'tool.started',
-        runId,
-        operationId: 'inspect-project',
-        tool: 'project_inspector',
-        input: { fileCount: get().files.length, intent: intentDecision.intent },
+        return { files: [...byPath.values()] };
       });
-      const currentFiles = get().files.filter((f) => !f.is_directory);
-      emitChatEvent({
-        type: 'tool.completed',
-        runId,
-        operationId: 'inspect-project',
-        result: { analyzedFiles: currentFiles.length },
-      });
-
-      emitChatEvent({
-        type: 'agent.thinking',
-        runId,
-        detail: `Planning ${intentDecision.intent} changes…`,
-      });
-
-      emitChatEvent({
-        type: 'tool.started',
-        runId,
-        operationId: 'code-generation',
-        tool: isSurgicalEdit ? 'edit_agent' : 'code_generator',
-        input: { prompt: content, isEdit: isSurgicalEdit },
-      });
-
-      if (!isInitialGen) {
-        try {
-          await get().createVersion(projectId, `Before: ${content.slice(0, 30)}`, 'Auto checkpoint before generation');
-        } catch {
-          // Continue if version creation fails
-        }
+      const writes = changes.filter(c => c.action !== 'deleted').map(c => ({ project_id: projectId, path: c.path, content: c.content ?? '', file_type: c.path.split('.').pop(), is_directory: false }));
+      if (writes.length) {
+        const { error } = await supabase.from('project_files').upsert(writes, { onConflict: 'project_id,path' });
+        if (error) onProgress?.('Files are saved in the engine workspace; cloud sync failed.');
       }
-
-      // Build conversation history for context
-      const conversationHistory = get().messages.map((m) => ({ role: m.role, content: m.content }));
-      const stateManagement = project.state_management || 'provider';
-
-      let outcome: AgentGenerationOutcome;
-      try {
-        outcome = await requestAIGeneration(
-          projectId,
-          get().messages,
-          get().files,
-          isInitialGen,
-          project.name,
-          stateManagement,
-          conversationHistory,
-          onProgress,
-          opts?.onEvent,
-          opts?.signal,
-          project.platform || 'web',
-          project.description || '',
-          opts?.modelPreference ?? 'auto',
-          opts?.onFile,
-          opts?.isRepair ?? false,
-          opts?.isEdit ?? isSurgicalEdit,
-        );
-      } catch (genError) {
-        emitChatEvent({
-          type: 'tool.failed',
-          runId,
-          operationId: 'code-generation',
-          error: genError instanceof Error ? genError.message : String(genError),
-        });
-        emitChatEvent({
-          type: 'message.failed',
-          runId,
-          error: genError instanceof Error ? genError.message : String(genError),
-        });
-        throw genError;
+      const deleted = changes.filter(c => c.action === 'deleted').map(c => c.path);
+      if (deleted.length) {
+        const { error } = await supabase.from('project_files').delete().eq('project_id', projectId).in('path', deleted);
+        if (error) onProgress?.('Cloud deletion sync failed; the engine workspace is authoritative.');
       }
-      const changedFiles = outcome.changes;
-
-      emitChatEvent({
-        type: 'tool.completed',
-        runId,
-        operationId: 'code-generation',
-        result: { changedFileCount: changedFiles.length, files: changedFiles.map((c) => c.path) },
-      });
-
-      if (changedFiles.length === 0) {
-        throw new Error(
-          'The AI finished without writing any files. It probably returned a plan instead of code. '
-          + 'Retry with an explicit build instruction, for example: "Build the app now — write pubspec.yaml and lib/main.dart first."',
-        );
-      }
-
-      // Files are the user's work and are saved even when verification failed.
-      // The failure is surfaced explicitly instead of being shown as success.
-      if (!outcome.verified) {
-        const failed = (outcome.verification?.gates ?? [])
-          .filter((gate) => gate.status === 'fail')
-          .map((gate) => `${gate.id} ${gate.detail}`)
-          .join('; ');
-        const detail = failed || 'the generated project did not pass verification.';
-        onProgress?.(`Files saved, but verification failed: ${detail}`);
-        useTerminalStore.getState().addLine({
-          type: 'error',
-          content: `✗ Verification failed: ${detail}`,
-        });
-      }
-
-      // Belt-and-braces: AI output sometimes carries a stale/copied pubspec
-      // name — pin it to this project's unique id before saving.
-      const uniqueAppId = generateUniqueAppId(project.name, projectId);
-      for (const change of changedFiles) {
-        if (change.path === 'pubspec.yaml' && typeof change.content === 'string') {
-          const pinned = applyAppIdToPubspec(change.content, uniqueAppId);
-          if (pinned !== change.content) {
-            change.content = pinned;
-            onProgress?.(`Pinned unique package name: ${uniqueAppId}`);
-          }
-        }
-      }
-      // Pre-write validation: fix what the LLM got wrong BEFORE the compiler
-      // (or the next repair round) ever sees it. Runs after app-id pinning so
-      // imports line up with the pinned package name.
-      const validation: PreWriteValidation = validateProjectFiles(
-        changedFiles
-          .filter((change) => change.action !== 'deleted')
-          .map((change) => ({ path: change.path, content: change.content as string | null })),
-        get().files.filter((file) => !file.is_directory).map((file) => ({ path: file.path, content: file.content ?? '' })),
-      );
-      if (validation.fixes.length > 0) {
-        const fixByPath = new Map(validation.fixes.map((fix) => [fix.path, fix.content]));
-        for (const change of changedFiles) {
-          const fixed = fixByPath.get(change.path);
-          if (fixed !== undefined) {
-            change.content = fixed;
-            fixByPath.delete(change.path);
-          }
-        }
-        // Fixes to project files that were not rewritten by this generation
-        // (e.g. stale files with hallucinated imports) must be persisted too.
-        for (const [path, content] of fixByPath) {
-          const existing = get().files.find((file) => file.path === path);
-          if (existing && existing.content !== content) {
-            await get().saveFile(projectId, path, content);
-          }
-        }
-      }
-      if (validation.changes.length > 0) {
-        useTerminalStore.getState().addLine({
-          type: 'success',
-          content: `✓ Validator fixed: ${validation.changes.join('; ')}`,
-        });
-      }
-      if (validation.issues.length > 0) {
-        for (const issue of validation.issues.slice(0, 5)) {
-          useTerminalStore.getState().addLine({
-            type: 'output',
-            content: `[validator] ${issue.path}: ${issue.message}`,
-          });
-        }
-      }
-
-      // Batch the writes. Saving 20-40 generated files one request at a time
-      // dominated generation latency on slower connections.
-      const upserts = changedFiles
-        .filter((change) => change.action === 'created' || change.action === 'modified')
-        .map((change) => ({
-          project_id: projectId,
-          path: change.path,
-          content: change.content ?? '',
-          file_type: change.path.split('.').pop() ?? null,
-          is_directory: false,
-        }));
-      if (upserts.length > 0) {
-        const { error: upsertError } = await supabase
-          .from('project_files')
-          .upsert(upserts, { onConflict: 'project_id,path' });
-        if (upsertError) {
-          throw new Error(`Could not save generated files: ${upsertError.message}`);
-        }
-      }
-      const deletedPaths = changedFiles
-        .filter((change) => change.action === 'deleted')
-        .map((change) => change.path);
-      if (deletedPaths.length > 0) {
-        await supabase
-          .from('project_files')
-          .delete()
-          .eq('project_id', projectId)
-          .in('path', deletedPaths);
-      }
-
-      const generatedPaths = new Set(
-        changedFiles.filter((change) => change.action !== 'deleted').map((change) => change.path),
-      );
-      const looksComplete = changedFiles.length >= 4
-        && generatedPaths.has('pubspec.yaml')
-        && generatedPaths.has('lib/main.dart');
-      const usesSupabase = detectSupabaseNeed(`${content} ${project.description ?? ''} ${project.name}`);
-
-      // Initial generation replaces the starter wholesale. Leaving the old
-      // demo auth/onboarding/Supabase files behind is what made a calculator
-      // ship with 17 unrelated files and broken imports.
-      if (looksComplete && (isInitialGen || !usesSupabase)) {
-        const stale = get().files.filter((file) => {
-          if (file.is_directory || generatedPaths.has(file.path)) return false;
-          if (!usesSupabase && /supabase/i.test(file.path)) return true;
-          return STARTER_FILE_PATTERNS.some((pattern) => pattern.test(file.path));
-        });
-        const stalePaths = stale.map((file) => file.path);
-        if (stalePaths.length > 0) {
-          await supabase
-            .from('project_files')
-            .delete()
-            .eq('project_id', projectId)
-            .in('path', stalePaths);
-        }
-      }
-
-      const nextActionPrompts = generateNextActionPrompts(content, changedFiles, usesSupabase);
-      const assistantContent = buildAssistantResponse(content, changedFiles, usesSupabase);
-      const assistantMessage: AIMessage = {
-        id: crypto.randomUUID(),
-        conversation_id: conv.id,
-        role: 'assistant',
-        content: assistantContent,
-        tool_calls: null,
-        changed_files: changedFiles,
-        metadata: { fileCount: changedFiles.length, nextActionPrompts },
-        created_at: new Date().toISOString(),
-      };
-      set((state) => ({ messages: [...state.messages, assistantMessage] }));
-
-      await userMessageSaved;
-      await supabase.from('ai_messages').insert({
-        conversation_id: conv.id,
-        role: 'assistant',
-        content: assistantContent,
-        changed_files: changedFiles,
-        metadata: { nextActionPrompts },
-      });
-
-      await get().loadFiles(projectId);
-
-      // Artifact gate: fail-fast BEFORE anyone pays for a doomed preview build.
-      // If generation clearly produced something unbuildable, log it, skip the
-      // auto-build, and queue one surgical repair round with the gate
-      // diagnostics. Repairs are queued (not fired) because the send lock is
-      // still held here.
-      const artifactGateFailed = validation && !validation.gate.passed;
-      if (artifactGateFailed && validation) {
-        const blockers = validation.gate.blockers.slice(0, 8);
-        onProgress?.(`Artifact gate failed: ${blockers.slice(0, 2).join(' | ')}`);
-        useTerminalStore.getState().addLine({
-          type: 'error',
-          content: `✗ Artifact gate failed (${validation.gate.blockers.length}): ${validation.gate.blockers.slice(0, 5).join(' • ')}`,
-        });
-        outcome = {
-          ...outcome,
-          verified: false,
-          verification: {
-            verified: false,
-            gates: [
-              ...(outcome.verification?.gates ?? []),
-              ...blockers.map((blocker) => ({ id: 'artifact-gate', status: 'fail' as const, detail: blocker })),
-            ],
-          },
-        };
-      }
-
-      // Authoritative compile gate: materialize the saved project in an
-      // isolated workspace and run the real Dart analyzer. "Verified" is only
-      // true when this actually ran and reported zero errors — never because
-      // files merely exist or a heuristic passed.
-      let verification: ProjectVerification | null = null;
-      if (!artifactGateFailed) {
-        const gateFiles = get().files
-          .filter((file) => !file.is_directory)
-          .map((file) => ({ path: file.path, content: file.content ?? '' }));
-        if (gateFiles.length > 0) {
-          onProgress?.('Running the real Dart analyzer on the saved project…');
-          try {
-            verification = await usePreviewStore.getState().verifyProject(projectId, gateFiles, {
-              signal: opts?.signal,
-            });
-          } catch (error) {
-            if (opts?.signal?.aborted) throw error;
-            const message = error instanceof Error ? error.message : String(error);
-            verification = {
-              verified: false,
-              skipped: true,
-              ok: false,
-              available: false,
-              summary: `Verification could not run: ${message}`,
-              errorCount: 0,
-              warningCount: 0,
-              diagnostics: [],
-              gate: { passed: false, blockers: [`Verification could not run: ${message}`] },
-              durationMs: 0,
-            };
-          }
-
-          const terminal = useTerminalStore.getState();
-          if (verification.verified) {
-            terminal.addLine({
-              type: 'success',
-              content: `✓ Verified with the real Dart analyzer — 0 errors, ${verification.warningCount} warning(s).`,
-            });
-          } else if (verification.skipped) {
-            terminal.addLine({ type: 'error', content: `✗ NOT verified: ${verification.summary}` });
-          } else {
-            terminal.addLine({
-              type: 'error',
-              content: `✗ Compile gate failed: ${verification.errorCount} error(s), ${verification.warningCount} warning(s).`,
-            });
-            for (const diagnostic of verification.diagnostics
-              .filter((item) => item.severity === 'error')
-              .slice(0, 8)) {
-              terminal.addLine({
-                type: 'error',
-                content: `  [analyzer] ${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column} ${diagnostic.code} ${diagnostic.message}`,
-              });
-            }
-          }
-          onProgress?.(verification.summary);
-        }
-      }
-
-      // A skipped verification (SDK offline, no pubspec, unsafe path) is NOT a
-      // code error — it must never auto-repair. Only a real analyzer/pub-get
-      // failure counts as a compile gate failure.
-      const compileGateFailed = Boolean(
-        verification
-        && !verification.verified
-        && !verification.skipped,
-      );
-      const verifiedByCompiler = verification?.verified === true && !artifactGateFailed;
-      outcome = {
-        ...outcome,
-        verified: verifiedByCompiler,
-        verification: {
-          verified: verifiedByCompiler,
-          gates: [
-            ...(outcome.verification?.gates ?? []),
-            ...(verification
-              ? [{
-                id: 'compile-gate',
-                status: verification.verified ? 'pass' : 'fail',
-                detail: verification.summary,
-              }]
-              : []),
-            ...(compileGateFailed && verification
-              ? verification.gate.blockers.slice(0, 8).map((blocker) => ({
-                id: 'compile-gate',
-                status: 'fail',
-                detail: blocker,
-              }))
-              : []),
-          ],
-        },
-      };
-
-      const repairReason: RepairReason | null = artifactGateFailed
-        ? 'artifact'
-        : compileGateFailed
-          ? 'verification'
-          : null;
-      if (
-        repairReason
-        && opts?.isRepair !== true
-        && opts?.isEdit !== true
-        && !opts?.signal?.aborted
-      ) {
-        queueRepair(
-          projectId,
-          repairReason === 'artifact'
-            ? validation?.gate.blockers ?? []
-            : verification?.gate.blockers ?? [],
-          1,
-          repairReason,
-        );
-      }
-
-      const promptSummary = content.replace(/\s+/g, ' ').trim().slice(0, 60);
-      const checkpointLabel = opts?.isRepair
-        ? `Repair ${opts.repairRound ?? 1}: ${promptSummary}`
-        : isInitialGen
-          ? `Generated ${project.name}`.slice(0, 80)
-          : `Edited: ${promptSummary}`;
-      await get().autoCheckpoint(
-        projectId,
-        checkpointLabel,
-        `${changedFiles.length} ${changedFiles.length === 1 ? 'file' : 'files'} changed`,
-      );
-      // Auto-build preview after generation (like Lovable). Always (re)build
-      // from the freshly generated files: a previous session may have been
-      // compiled from the identical starter template (or an older revision),
-      // and serving that stale build is what made every fresh app preview
-      // render "the same app".
-      try {
-        const previewStore = usePreviewStore.getState();
-        const prevSession = previewStore.getSession(projectId);
-        if (prevSession && (prevSession.status === 'queued' || prevSession.status === 'building')) {
-          // Tear down the in-flight stale build first — the server rejects
-          // overlapping builds per project (409) and would otherwise keep
-          // serving the old files.
-          try {
-            await previewStore.stop(prevSession.sessionId);
-          } catch {
-            // Best-effort; the retry below covers a slow teardown.
-          }
-          await new Promise((r) => setTimeout(r, 1200));
-        }
-        const currentFiles = get().files
-          .filter((f) => !f.is_directory)
-          .map((f) => ({ path: f.path, content: f.content }));
-        if (currentFiles.length > 0 && !artifactGateFailed && !compileGateFailed) {
-          let sessionId: string | null = null;
-          try {
-            sessionId = await previewStore.build(projectId, currentFiles, {
-              supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-              supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-            });
-          } catch (buildErr) {
-            // Previous build may still be tearing down (409) — one retry.
-            if (buildErr instanceof Error && /already running/i.test(buildErr.message)) {
-              onProgress?.('Previous build still finishing — retrying preview build...');
-              await new Promise((r) => setTimeout(r, 4000));
-              sessionId = await previewStore.build(projectId, currentFiles, {
-                supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-                supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-              });
-            } else {
-              throw buildErr;
-            }
-          }
-          if (sessionId) {
-            onProgress?.('Preview build started - check Preview tab');
-            // Lovable instant loop: initial generations land on the live
-            // preview; follow-up edits stay where the user is working.
-            if (isInitialGen) {
-              useWorkspaceStore.getState().setActiveView('preview');
-            }
-            // Watch the build: on failure, feed the logs back to the agent
-            // for one capped auto-repair pass (A3). Repairs never re-arm.
-            const repairRound = opts?.repairRound ?? 0;
-            if (opts?.autoRepairBuild !== false && (!opts?.isRepair || repairRound <= MAX_AUTO_REPAIRS)) {
-              watchPreviewBuild(projectId, sessionId);
-            }
-          }
-        }
-      } catch {
-        // Auto-build is best-effort — don't block the flow
-      }
-      if (artifactGateFailed) {
-        useTerminalStore.getState().addLine({
-          type: 'output',
-          content: 'Preview build skipped — artifact gate failed. Repair is running; the build re-queues automatically.',
-        });
-      } else if (compileGateFailed) {
-        useTerminalStore.getState().addLine({
-          type: 'output',
-          content: 'Preview build skipped — the Dart analyzer found errors. Files are saved; a targeted repair is queued.',
-        });
-      }
-      emitChatEvent({
-        type: 'validation.completed',
-        runId,
-        result: {
-          issueCount: validation.issues.length,
-          fixCount: validation.fixes.length,
-          changes: validation.changes,
-        },
-      });
-      emitChatEvent({ type: 'message.completed', runId });
-
-      return {
-        mode: 'generation' as const,
-        fileCount: changedFiles.length,
-        files: changedFiles,
-        verified: outcome.verified,
-        verification: outcome.verification,
-        intent: intentDecision.intent,
-      };
-    } // end runBody
+      await addMessage('assistant', result.summary, changes);
+      if (!result.success) throw new Error(result.summary);
+      return { mode: changes.length ? 'generation' : 'chat', fileCount: changes.length, files: changes,
+        verified: result.verification?.verified, verification: result.verification };
+    } finally {
+      activeSendProjects.delete(projectId);
+      if (get().generatingIn === projectId) set({ generatingIn: null });
+    }
   },
-
 
   loadDependencies: async (projectId) => {
     const { data } = await supabase

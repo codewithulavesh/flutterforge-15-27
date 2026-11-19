@@ -184,6 +184,8 @@ export function buildDockerRunArgv(input: DockerRunArgvInput): string[] {
   argv.push('--security-opt=no-new-privileges');
   argv.push('--user=1000:1000');
   for (const [key, value] of Object.entries(input.env)) {
+    // Host paths (especially macOS PATH/HOME) are invalid inside Linux containers.
+    if (['PATH', 'HOME', 'PUB_CACHE', 'FLUTTER_ROOT', 'TMPDIR', 'TEMP', 'USERPROFILE', 'SystemRoot', 'ComSpec'].includes(key)) continue;
     argv.push('-e', `${key}=${value}`);
   }
   argv.push('-v', `${input.rootReal}:${input.workdir}:${input.mount}`);

@@ -1,0 +1,16 @@
+.project-connectors { display:grid;gap:12px;color:var(--studio-text,var(--foreground)); }
+.project-connectors p,.connector-card dt { font-size:12px;color:var(--studio-muted,var(--muted-foreground));line-height:1.5; }
+.connector-card { display:grid;gap:12px;min-width:0;padding:16px;border:1px solid var(--studio-line,var(--border));border-radius:12px;background:var(--studio-surface,var(--background)); }
+.connector-card header,.connector-buttons,.connector-card button,.connector-progress { display:flex;align-items:center;gap:8px; }
+.connector-icon { display:grid;place-items:center;width:32px;height:32px;border-radius:8px;background:var(--studio-raised,var(--muted)); }
+.connector-card h3 { font-size:14px;font-weight:600; }
+.connector-state { margin-left:auto;color:var(--studio-muted,var(--muted-foreground));font-size:11px; }
+.connector-state[data-connected=true] { color:var(--studio-accent,var(--primary)); }
+.connector-card form { display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap; }
+.connector-card label { display:grid;gap:5px;font-size:12px;flex:1;min-width:140px; }
+.connector-card input,.connector-card button,.connector-error button { border:1px solid var(--studio-line,var(--border));border-radius:6px;padding:7px 10px;background:var(--studio-raised,var(--muted));font-size:12px;color:inherit; }
+.connector-card button:disabled { opacity:.52; }
+.connector-card strong { font-size:14px;overflow-wrap:anywhere; }
+.connector-card dl { display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px; }
+.connector-card dd { margin:2px 0;font-size:13px;overflow-wrap:anywhere; }
+.connector-progress,.connector-error { font-size:12px; }

@@ -1,4 +1,4 @@
-import { callLLMTextStreaming, type LLMMessage } from '../agents/llmClient';
+import { callLLMTextStreaming, type LLMMessage } from './llmClient';
 import { keyPool } from './keyPool';
 import {
   type AssistantIntent,

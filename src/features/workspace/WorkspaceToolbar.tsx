@@ -1,5 +1,7 @@
+import { engineerRequest } from '@/agent/engineClient';
 import { useNavigate } from 'react-router-dom';
 import {
+  SlidersHorizontal,
   Circle,
   Code2,
   Download as DownloadIcon,
@@ -40,9 +42,10 @@ import { downloadProjectZip, formatBytes } from '@/utils/exportProject';
 import { SIDEBAR_SECTIONS } from '@/utils/constants';
 import { cn } from '@/utils/cn';
 
-const PRIMARY_NAV_ITEMS = new Set(['dashboard', 'ai-builder', 'preview', 'files', 'code', 'terminal']);
+const PRIMARY_NAV_ITEMS = new Set(['dashboard', 'ai-builder', 'preview', 'files', 'code', 'terminal', 'generator']);
 const NAV_ICONS: Record<string, LucideIcon> = {
   LayoutGrid,
+  SlidersHorizontal,
   Sparkles,
   Eye,
   FolderTree,
@@ -105,47 +108,16 @@ export function WorkspaceToolbar() {
 
   async function handleBuild() {
     if (!currentProject) return;
-    const previewStore = usePreviewStore.getState();
-    const existing = previewStore.getSession(currentProject.id);
-    if (existing && (existing.status === 'queued' || existing.status === 'building')) {
-      toast('info', 'A build is already running — watch it in the Preview tab.');
-      setActiveView('preview');
-      return;
-    }
-    if (files.length === 0 || dartFileCount === 0) {
-      toast('error', 'No Dart files to build yet — generate the app first.');
-      return;
-    }
-    // Trigger the REAL Flutter web build (same pipeline as PreviewPanel).
-    // Live compiler output streams into the Build panel via the session sync.
-    setBuilding(true);
-    setBottomPanelOpen(true);
-    setBottomPanelTab('build');
-    clearBuildLogs();
-    addBuildLog('Starting Flutter web preview build…');
+    setBuilding(true); clearBuildLogs(); setActiveView('preview');
     try {
-      const sessionId = await previewStore.build(
-        currentProject.id,
-        files.filter((f) => !f.is_directory).map((f) => ({ path: f.path, content: f.content })),
-        {
-          supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-          supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-      );
-      addBuildLog(`✓ Build started (session ${sessionId.slice(0, 8)}…) — live log in Preview tab`);
-      setActiveView('preview');
-      toast('success', 'Real web build started — watch it in Preview.');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Build failed to start.';
-      addBuildLog(`✗ ${message}`);
-      toast('error', message);
-    } finally {
-      setBuilding(false);
-    }
+      await engineerRequest(currentProject.id, 'build', {});
+      addBuildLog('Build started. Follow verification in the preview.');
+    } catch (error) { toast('error', error instanceof Error ? error.message : 'Build failed.'); }
+    finally { setBuilding(false); }
   }
 
   return (
-    <header className="sticky top-0 z-30 shrink-0 border-b border-[rgba(248,255,248,0.10)] bg-[linear-gradient(180deg,#001525_0%,#00101e_100%)] backdrop-blur-xl shadow-[0_1px_0_rgba(248,255,248,0.07)]">
+    <header className="studio-toolbar sticky top-0 z-30 shrink-0 border-b border-[rgba(248,255,248,0.10)] bg-[linear-gradient(180deg,#001525_0%,#00101e_100%)] backdrop-blur-xl shadow-[0_1px_0_rgba(248,255,248,0.07)]">
       <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-h-[60px] px-3 sm:px-4 py-2">
 
         {/* ── Left: logo + project name ─────────────────────── */}
@@ -156,34 +128,14 @@ export function WorkspaceToolbar() {
           >
             <BrandLogo size={28} className="rounded-[8px] border border-[rgba(248,255,248,0.14)]" />
             <div className="flex flex-col leading-none text-left">
-              <span className="max-w-24 truncate text-[13px] font-semibold text-[#f8fff8] sm:max-w-36" style={{ fontFamily: "'Lime Panchang', sans-serif" }}>
+              <span className="max-w-24 truncate text-[13px] font-semibold text-[#f8fff8] sm:max-w-36" >
                 {currentProject?.name ?? 'FlutterForge'}
               </span>
               <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[#748ea0]">Workspace</span>
             </div>
           </button>
 
-          {/* Status chip */}
-          {currentProject && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[rgba(248,255,248,0.12)] bg-[rgba(248,255,248,0.05)] px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#748ea0]">
-              <span
-                aria-hidden
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  currentProject.status === 'ready' ? 'bg-[#c5fa75]' : 'bg-[#748ea0]',
-                )}
-              />
-              {currentProject.status ?? 'created'}
-            </span>
-          )}
 
-          {/* Live code indicator */}
-          {hasCode && (
-            <div className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-[rgba(197,250,117,0.15)] border border-[rgba(197,250,117,0.30)] px-2.5 py-1 text-[10px] font-semibold text-[#c5fa75]">
-              <Zap size={10} />
-              <span>{dartFileCount} files</span>
-            </div>
-          )}
         </div>
 
         {/* ── Center: primary nav ───────────────────────────── */}
@@ -193,12 +145,14 @@ export function WorkspaceToolbar() {
             aria-label="Workspace navigation"
             style={{ scrollbarWidth: 'none' }}
           >
-            {WORKSPACE_NAV_ITEMS.filter((item) => PRIMARY_NAV_ITEMS.has(item.id)).map((item) => {
+            {WORKSPACE_NAV_ITEMS.filter((item) => PRIMARY_NAV_ITEMS.has(item.id) && item.id !== 'dashboard').map((item) => {
               const Icon = NAV_ICONS[item.icon] ?? Circle;
               const isActive = item.id === activeView;
               return (
                 <button
                   key={item.id}
+                  aria-current={isActive ? 'page' : undefined}
+                  aria-label={item.id === 'ai-builder' ? 'Chat' : item.label}
                   onClick={() => item.id === 'dashboard' ? navigate('/dashboard') : setActiveView(item.id as typeof activeView)}
                   className={cn(
                     'relative flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-medium whitespace-nowrap transition-all shrink-0',
@@ -206,10 +160,10 @@ export function WorkspaceToolbar() {
                       ? 'bg-[rgba(197,250,117,0.12)] border border-[rgba(197,250,117,0.35)] text-[#f8fff8] shadow-[0_0_12px_rgba(197,250,117,0.12)]'
                       : 'border border-transparent text-[#748ea0] hover:bg-[rgba(248,255,248,0.07)] hover:text-[#f8fff8]'
                   )}
-                  aria-current={isActive ? 'page' : undefined}
+
                 >
                   <Icon size={13} className={cn('shrink-0', isActive && 'text-[#c5fa75]')} />
-                  <span className="hidden sm:inline">{item.label}</span>
+                  <span>{item.id === 'ai-builder' ? 'Chat' : item.label}</span>
                 </button>
               );
             })}

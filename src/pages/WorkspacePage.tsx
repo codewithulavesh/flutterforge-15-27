@@ -1,3 +1,4 @@
+import '@/features/workspace/workspace-engine.css';
 import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useProjectStore } from '@/stores/project.store';
@@ -9,12 +10,13 @@ const WorkspaceToolbar = lazy(() => import('@/features/workspace/WorkspaceToolba
 const AIBuilderPanel = lazy(() => import('@/features/workspace/AIBuilderPanel').then((module) => ({ default: module.AIBuilderPanel })));
 const FileExplorer = lazy(() => import('@/features/workspace/FileExplorer').then((module) => ({ default: module.FileExplorer })));
 const CodeEditor = lazy(() => import('@/features/workspace/CodeEditor').then((module) => ({ default: module.CodeEditor })));
-const PreviewPanel = lazy(() => import('@/features/workspace/PreviewPanel').then((module) => ({ default: module.PreviewPanel })));
+const PreviewPanel = lazy(() => import('@/features/workspace/EngineerPreviewPanel').then((module) => ({ default: module.EngineerPreviewPanel })));
 const TerminalPanel = lazy(() => import('@/features/workspace/TerminalPanel').then((module) => ({ default: module.TerminalPanel })));
 const DependenciesView = lazy(() => import('@/features/workspace/DependenciesView').then((module) => ({ default: module.DependenciesView })));
 const VersionsView = lazy(() => import('@/features/workspace/VersionsView').then((module) => ({ default: module.VersionsView })));
 const RevisionHistory = lazy(() => import('@/features/workspace/RevisionHistory').then((module) => ({ default: module.RevisionHistory })));
 const GenerationStudio = lazy(() => import('@/features/workspace/GenerationStudio').then((module) => ({ default: module.GenerationStudio })));
+const GeneratorPanel = lazy(() => import('@/features/workspace/GeneratorPanel').then(module => ({ default: module.GeneratorPanel })));
 const SettingsView = lazy(() => import('@/features/workspace/SettingsView').then((module) => ({ default: module.SettingsView })));
 const ExportView = lazy(() => import('@/features/workspace/ExportView').then((module) => ({ default: module.ExportView })));
 const CommandPalette = lazy(() => import('@/features/workspace/CommandPalette').then((module) => ({ default: module.CommandPalette })));
@@ -24,7 +26,7 @@ import { cn } from '@/utils/cn';
 
 const AI_PANEL_MIN = 300;
 const AI_PANEL_MAX = 600;
-const AI_PANEL_DEFAULT = 360;
+const AI_PANEL_DEFAULT = 420;
 
 export function WorkspacePage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -35,6 +37,7 @@ export function WorkspacePage() {
     bottomPanelTab,
     setBottomPanelTab,
     setBottomPanelOpen,
+    activeFile,
   } = useWorkspaceStore();
 
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT);
@@ -101,7 +104,7 @@ export function WorkspacePage() {
   // On narrow screens the AI Builder is reached from the workspace navigation
   // as a full-page view. Keeping a second chat pane here would squeeze the
   // editor and preview below a useful size.
-  const showAiPanel = activeView !== 'ai-builder';
+  const chatSelected = activeView === 'ai-builder';
   const showFileExplorer = activeView === 'code' || activeView === 'files';
 
   return (
@@ -116,27 +119,32 @@ export function WorkspacePage() {
 
         {/* Keep the work surface usable on phones and tablets. Side panels join
             the canvas only when there is enough horizontal room. */}
-        <div className="flex-1 flex flex-col xl:flex-row min-h-0 bg-[#00101e]">
+        <div className="flex-1 flex flex-col min-[900px]:flex-row min-h-0 bg-[#00101e]">
 
           {/* AI Builder Panel - responsive drawer on mobile */}
-          {showAiPanel && (
-            <>
+          <>
               <div
-                style={{ width: aiPanelWidth, minWidth: AI_PANEL_MIN, maxWidth: AI_PANEL_MAX }}
-                className="hidden xl:flex shrink-0 flex-col border-r border-[rgba(248,255,248,0.10)] bg-[#00101e] transition-none overflow-hidden min-h-0 h-full"
+                style={{ '--chat-width': `${aiPanelWidth}px` } as React.CSSProperties}
+                className={cn("w-full min-[900px]:w-[min(var(--chat-width),40vw)] min-[900px]:flex shrink-0 flex-col border-r border-white/10 overflow-hidden min-h-0 h-full", chatSelected ? "flex" : "hidden")}
               >
                 <Suspense fallback={<div className="h-full" />}><AIBuilderPanel /></Suspense>
               </div>
               {/* Drag handle - hidden on mobile */}
               <div
                 onMouseDown={handleMouseDown}
-                className="hidden xl:flex w-1 shrink-0 cursor-col-resize hover:bg-[rgba(197,250,117,0.20)] active:bg-[rgba(197,250,117,0.40)] transition-colors group relative"
+                className="hidden min-[900px]:flex w-1 shrink-0 cursor-col-resize hover:bg-[rgba(197,250,117,0.20)] active:bg-[rgba(197,250,117,0.40)] transition-colors group relative"
                 title="Drag to resize AI panel"
+                role="separator" aria-label="Resize AI panel" aria-orientation="vertical" tabIndex={0}
+                aria-valuenow={aiPanelWidth} aria-valuemin={AI_PANEL_MIN} aria-valuemax={AI_PANEL_MAX}
+                onKeyDown={event => {
+                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                    event.preventDefault(); setAiPanelWidth(width => Math.max(AI_PANEL_MIN, Math.min(AI_PANEL_MAX, width + (event.key === 'ArrowRight' ? 20 : -20))));
+                  }
+                }}
               >
                 <div className="absolute inset-y-0 -left-1 -right-1" />
               </div>
-            </>
-          )}
+          </>
 
           {/* On phones the file list becomes a short top panel; on wide screens
               it sits beside the editor as a conventional explorer sidebar. */}
@@ -147,23 +155,25 @@ export function WorkspacePage() {
           )}
 
           {/* Center: main view — preview is hidden until generation completes */}
-          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <div className={cn("flex-1 min-[900px]:flex flex-col min-w-0 min-h-0", chatSelected ? "hidden" : "flex")}>
+            {!['ai-builder', 'preview'].includes(activeView) && <div className="workspace-canvas-heading"><span><strong>{({ generator: 'Generator', code: 'Code', files: 'Files', preview: 'Preview', generation: 'Build studio', revisions: 'History' } as Record<string, string>)[activeView] ?? activeView}</strong><span>/</span>{activeView === 'code' ? activeFile ?? 'Select a file' : currentProject.name}</span><span>Flutter workspace</span></div>}
             <div className="flex-1 min-h-0 overflow-hidden">
               <Suspense fallback={<FullPageSpinner label="Loading workspace view..." />}>
-                {renderMainView(activeView)}
+                {renderMainView(activeView, currentProject.id)}
               </Suspense>
             </div>
           </div>
         </div>
+        <footer className="workspace-statusbar"><span><span className="h-1.5 w-1.5 rounded-full bg-[#c5fa75]" />{currentProject.name}</span><span>{activeFile ?? 'No file selected'}<span>·</span>Flutter / Dart</span></footer>
       </div>
     </div>
   );
 }
 
-function renderMainView(view: string) {
+function renderMainView(view: string, projectId: string) {
   switch (view) {
     case 'ai-builder':
-      return <AIBuilderPanel variant="page" />;
+      return <PreviewPanel />;
     case 'code':
     case 'files':
       return <CodeEditor />;
@@ -177,6 +187,8 @@ function renderMainView(view: string) {
       return <RevisionHistory />;
     case 'generation':
       return <GenerationStudio />;
+    case 'generator':
+      return <GeneratorPanel key={projectId} projectId={projectId} />;
     case 'settings':
       return <SettingsView />;
     case 'export':

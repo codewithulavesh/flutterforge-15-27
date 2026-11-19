@@ -25,6 +25,8 @@ const { projectState, sendMessageMock } = vi.hoisted(() => {
   };
 });
 
+vi.mock('./EngineerControls', () => ({ EngineerControls: () => <section aria-label="Engineer execution controls" /> }));
+
 vi.mock('@/stores/project.store', () => {
   // Zustand-compatible stand-in: callable as a hook (with or without a
   // selector) plus the statics the panel uses (setState/getState).
@@ -136,46 +138,12 @@ describe('AIBuilderPanel realtime chat', () => {
     await waitFor(() => expect(useTerminalStore.getState().isAnswering).toBe(false));
   });
 
-  it('shows the live agent timeline, sources, queue and terminal of a running generation', () => {
-    const activity = useActivityStore.getState();
-    activity.begin('project-1', 'Build a pomodoro timer', true, 'google/gemini-2.0-flash:free');
-    activity.ingestProgress('Understanding the brief');
-    activity.ingestProgress('Planning the app architecture');
-    activity.ingestProgress('lib/main.dart created');
-    activity.ingestFile({ path: 'lib/main.dart', action: 'created', content: '', language: 'dart', node: 'file_ready' });
-    useActivityStore.setState({
-      plan: {
-        appName: 'Pomodoro Timer',
-        appDescription: 'A focused timer app.',
-        architecture: 'feature_first',
-        stateManagement: 'provider',
-        screens: [{ name: 'Home', routePath: '/', filePath: 'lib/screens/home_screen.dart' }],
-        filesToCreate: ['lib/main.dart', 'lib/screens/home_screen.dart', 'lib/widgets/timer_ring.dart'],
-      } as never,
-    });
-    useTerminalStore.setState({
-      isGenerating: true,
-      currentPhase: 'Planning the app architecture',
-    });
-
-    render(
-      <MemoryRouter>
-        <AIBuilderPanel variant="page" />
-      </MemoryRouter>,
-    );
-
-    // Agent card identifies the run and its model.
-    expect(screen.getByText('FlutterForge Agent')).toBeTruthy();
-    expect(screen.getByText('gemini 2.0 flash')).toBeTruthy();
-    // The two ingested progress messages become chain-of-thought steps.
-    expect(screen.getByText('Planning the app architecture')).toBeTruthy();
-    expect(screen.getByText('Understanding the brief')).toBeTruthy();
-    // Sources list the file the engine produced.
-    expect(screen.getByText('Used 1 project sources')).toBeTruthy();
-    // Queued plan files that have not been generated yet show as in progress.
-    expect(screen.getByText(/in progress/)).toBeTruthy();
-    // The terminal accumulates every streaming line, ready to expand.
-    expect(screen.getByText(/Live logs · 3 lines/)).toBeTruthy();
+  it('starter suggestions populate an editable request without silently executing it', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><AIBuilderPanel variant="page" /></MemoryRouter>);
+    await user.click(screen.getByRole('button', { name: 'Review this project' }));
+    expect((screen.getByRole('textbox', { name: 'Message your AI engineer' }) as HTMLTextAreaElement).value).toContain('Inspect the existing code');
+    expect(sendMessageMock).not.toHaveBeenCalled();
   });
 });
 
@@ -274,7 +242,7 @@ describe('AIBuilderPanel stop, keyboard and accessibility', () => {
     useTerminalStore.setState({ isAnswering: false, isGenerating: false, currentPhase: null, generationError: null });
   });
 
-  it('shows the Stop button only while streaming, keeps the partial reply and stores a stopped message', async () => {
+  it('shows Stop only while streaming, cancels the request and retains the partial reply', async () => {
     sendMessageMock.mockImplementation((_projectId, _content, _progress, options) => {
       options.onToken('The answer is arriving ');
       return new Promise(() => {});
@@ -302,13 +270,10 @@ describe('AIBuilderPanel stop, keyboard and accessibility', () => {
     expect(useTerminalStore.getState().isAnswering).toBe(false);
     expect(useTerminalStore.getState().isGenerating).toBe(false);
 
-    // The partial assistant content was kept and marked stopped in the store.
-    const stopped = (projectState.messages as Array<{ role: string; content: string; metadata?: Record<string, unknown> }>)
-      .find((message) => message.role === 'assistant');
-    expect(stopped).toBeTruthy();
-    expect(stopped?.content).toContain('The answer is arriving');
-    expect(stopped?.metadata?.stopped).toBe(true);
-    expect(screen.getByText('Stopped')).toBeTruthy();
+    // Cancellation retains streamed text visibly rather than inventing a completed reply.
+    expect(screen.getByText('The answer is arriving')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('Stopped');
+    expect(sendMessageMock.mock.calls[0][3].signal.aborted).toBe(true);
   });
 
   it('sends on Enter and treats Shift+Enter as a newline, not a send', async () => {

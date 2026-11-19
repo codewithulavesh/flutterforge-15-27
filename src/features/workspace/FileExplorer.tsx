@@ -181,6 +181,8 @@ export function FileExplorer() {
       setNewPath('');
       setNewError(null);
       openFile(path);
+    } catch (error) {
+      setNewError(error instanceof Error ? error.message : 'Could not create the file.');
     } finally {
       setBusyPath(null);
     }
@@ -193,6 +195,8 @@ export function FileExplorer() {
       const removed = await deleteFile(currentProject.id, path);
       if (removed) toast('success', `Deleted ${path}`);
       else toast('error', useProjectStore.getState().error ?? `Could not delete ${path}.`);
+    } catch (error) {
+      toast('error', error instanceof Error ? error.message : 'Could not delete the file.');
     } finally {
       setBusyPath(null);
       setMenuPath(null);

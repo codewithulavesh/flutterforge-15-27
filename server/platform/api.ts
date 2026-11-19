@@ -1,3 +1,7 @@
+import { connectorMutation, listProjectConnectors, updateProjectConnector } from './connectors/projectConnectors.js';
+import { loadGeneratorSettings, saveGeneratorSettings } from './engine/generatorSettings.js';
+import { EngineerRuntime } from './engine/runtime.js';
+import { z } from 'zod';
 /**
  * Platform HTTP API.
  *
@@ -25,8 +29,8 @@ import { createVerifyHealWorkflow, createLiveVerifyHealDeps } from './qa/verifyA
 import { createReleaseBuildWorkflow } from './release/buildWorkflow.js';
 import { createPromptToAppWorkflow } from './generation/promptToApp.js';
 import { createAppForgeWorkflow, appForgeDefaultDeps } from './generation/forgeWorkflow.js';
-import { createReviewBoardWorkflow, readProjectFiles } from './agents/reviewWorkflow.js';
-import { createReviewContext, getAgentDefinition, listAgents, listAgentsByDepartment, runAgentCorps } from './agents/index.js';
+import { createReviewBoardWorkflow, readProjectFiles } from './checks/reviewWorkflow.js';
+import { createReviewContext, getCheckDefinition, listChecks, listChecksByCategory, runChecks } from './checks/index.js';
 import { compileSpec } from './generation/spec/index.js';
 import { validateSpec } from './generation/emit/shared.js';
 import { BENCHMARKS } from './generation/quality/index.js';
@@ -76,6 +80,12 @@ import {
   type Principal,
 } from './gateway/index.js';
 
+let engineerPromise: Promise<EngineerRuntime> | null = null;
+function getEngineer(platform: PlatformInstance) {
+  if (!engineerPromise) engineerPromise = EngineerRuntime.create({ db: platform.db, dataDir: platform.config.dataDir }).catch(error => { engineerPromise = null; throw error; });
+  return engineerPromise;
+}
+
 let platformPromise: Promise<PlatformInstance> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let shuttingDown = false;
@@ -118,6 +128,8 @@ export function getPlatform(): Promise<PlatformInstance> {
 
 export async function closePlatform(): Promise<void> {
   shuttingDown = true;
+  await (await engineerPromise?.catch(() => null))?.close();
+  engineerPromise = null;
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
@@ -141,6 +153,12 @@ export function isPlatformPath(pathname: string): boolean {
     || pathname.startsWith(PLATFORM_PREFIX);
 }
 
+
+const engineerInput = z.object({
+  specialists: z.array(z.enum(['planner', 'reviewer'])).max(2).optional(),
+  prompt: z.string().trim().min(1).max(32000),
+  files: z.array(z.object({ path: z.string().min(1).max(500), content: z.string().max(2 * 1024 * 1024) })).max(3000).optional(),
+}).strict();
 // ------------------------------------------------------------------
 // Helpers
 // ------------------------------------------------------------------
@@ -410,6 +428,89 @@ function add(method: string, pattern: string, handler: PathHandler): void {
   table.push({ method, pattern, regex, keys, handler });
 }
 
+
+for (const method of ['GET', 'POST'] as const) {
+  add(method, '/api/platform/engine/projects/:projectId/generator-settings', async ({ res, params, principal, platform, body }) => {
+    const id = params.projectId;
+    if (!id || id.length > 128) throw new ValidationError('Invalid projectId.');
+    requirePermission(principal, method === 'GET' ? 'project:read' : 'project:write', id);
+    const settings = method === 'GET'
+      ? await loadGeneratorSettings(platform.db, principal.tenantId, id)
+      : await saveGeneratorSettings(platform.db, principal.tenantId, id, body);
+    sendJson(res, 200, settings);
+  });
+}
+
+for (const method of ['GET', 'POST']) {
+  add(method, '/api/platform/engine/projects/:projectId/connectors', async ({ params, principal, platform, res, body }) => {
+    if (!params.projectId || params.projectId.length > 128) throw new ValidationError('Invalid projectId.');
+    requirePermission(principal, method === 'GET' ? 'project:read' : 'project:write', params.projectId);
+    const scope = { tenantId: principal.tenantId, projectId: params.projectId };
+    if (method === 'GET') return sendJson(res, 200, await listProjectConnectors(platform.db, scope));
+    const parsed = connectorMutation.safeParse(body);
+    if (!parsed.success) throw new ValidationError('Invalid connector configuration.');
+    if (parsed.data.action === 'sync' && !expensiveRouteBucket.consume(principal.userId).allowed) throw new RateLimitError(60000);
+    sendJson(res, 200, await updateProjectConnector(platform.db, scope, parsed.data));
+  });
+}
+
+for (const operation of ['run', 'build', 'state', 'events', 'files', 'resume', 'instruction', 'pause', 'cancel', 'edit-file'] as const) {
+  const method = ['state', 'events', 'files'].includes(operation) ? 'GET' : 'POST';
+  add(method, `/api/platform/engine/projects/:projectId/${operation}`, async ({ req, res, params, body, platform, principal, url }) => {
+    const projectId = params.projectId;
+    if (!projectId || projectId.length > 128) throw new ValidationError('Invalid projectId.');
+    requirePermission(principal, method === 'GET' ? 'project:read' : 'workflow:start', projectId);
+    const identity = { projectId, tenantId: principal.tenantId, actor: principal.userId };
+    const runtime = await getEngineer(platform);
+    if (operation === 'run') {
+      if (!expensiveRouteBucket.consume(principal.userId).allowed) throw new RateLimitError(60000);
+      const parsed = engineerInput.safeParse(body);
+      if (!parsed.success) throw new ValidationError(parsed.error.message);
+      sendJson(res, 202, await runtime.start(identity, parsed.data.prompt, parsed.data.files as Array<{ path: string; content: string }>, {}, parsed.data.specialists));
+    } else if (operation === 'build') {
+      if (!expensiveRouteBucket.consume(principal.userId).allowed) throw new RateLimitError(60000);
+      sendJson(res, 202, await runtime.build(identity));
+    } else if (operation === 'edit-file') {
+      const parsed = z.object({ path: z.string().min(1).max(500), content: z.string().max(2 * 1024 * 1024).nullable(), expectedContent: z.string().nullable(), destination: z.string().min(1).max(500).optional() }).strict().safeParse(body);
+      if (!parsed.success) throw new ValidationError(parsed.error.message);
+      await runtime.editFile(identity, parsed.data.path, parsed.data.content, parsed.data.expectedContent, parsed.data.destination);
+      sendJson(res, 200, { saved: true });
+    } else if (operation === 'state') sendJson(res, 200, await runtime.state(identity));
+    else if (operation === 'files') sendJson(res, 200, { files: await runtime.files(identity) });
+    else if (operation === 'resume') {
+      const parsed = z.object({ approvalId: z.string().optional(), approved: z.boolean().optional(), instruction: z.string().max(8000).optional() }).strict().safeParse(body);
+      if (!parsed.success) throw new ValidationError(parsed.error.message);
+      sendJson(res, 202, await runtime.resume(identity, parsed.data));
+    } else if (operation === 'instruction') {
+      if (typeof body?.instruction !== 'string') throw new ValidationError('Instruction is required.');
+      await runtime.instruct(identity, body.instruction); sendJson(res, 202, { accepted: true });
+    } else if (operation === 'pause' || operation === 'cancel') {
+      await runtime.control(identity, operation); sendJson(res, 202, { accepted: true });
+    } else {
+      const row = await runtime.row(identity);
+      const after = Number(url.searchParams.get('after') ?? req.headers['last-event-id'] ?? 0);
+      if (!Number.isSafeInteger(after) || after < 0) throw new ValidationError('Invalid event cursor.');
+      // Subscribe first, then replay, suppressing duplicate sequence numbers.
+      let cursor = after, replaying = true;
+      const pending: import('./engine/types.js').EngineEvent[] = [];
+      const write = (event: import('./engine/types.js').EngineEvent) => {
+        if (event.seq <= cursor || res.writableEnded) return;
+        cursor = event.seq; res.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
+      };
+      const unsubscribe = runtime.events.subscribe(row.id, event => replaying ? pending.push(event) : write(event));
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+      res.write(': engineer events\n\n');
+      try {
+        let history;
+        do { history = await runtime.events.history(row.id, cursor, 2000); for (const event of history) write(event); } while (history.length === 2000);
+        replaying = false; for (const event of pending) write(event);
+      } catch (error) { unsubscribe(); res.end(); throw error; }
+      const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(': heartbeat\n\n'); }, 15000);
+      res.on('close', () => { clearInterval(heartbeat); unsubscribe(); });
+    }
+  });
+}
+
 add('GET', '/api/platform/health', async ({ res, platform }) => {
   const integrity = await platform.db.integrityCheck().catch(() => ({ ok: false, detail: 'check failed' }));
   sendJson(res, 200, {
@@ -455,7 +556,7 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
           : 'The sandbox runner could not be created; see server logs.',
       },
       { pillar: '10', name: 'QA & Self-Healing', status: 'implemented', notes: 'Dart-aware structural gate, analyzer diagnostic parsing, contract verifier, healing policy with oscillation detection, visual QA gate (token compliance, accessibility, responsiveness); `verify.heal` workflow runs the closed repair loop.' },
-      { pillar: '10b', name: 'Agent Corps (review organization)', status: 'implemented', notes: '20 deterministic specialist agents across product, design, engineering, quality, delivery and intelligence; department-weighted scorecard; `review.board` durable DAG fails closed on blockers.' },
+      { pillar: '10b', name: 'Deterministic checks (review organization)', status: 'implemented', notes: '20 deterministic specialist agents across product, design, engineering, quality, delivery and intelligence; department-weighted scorecard; `review.board` durable DAG fails closed on blockers.' },
       { pillar: '11', name: 'Runtime & Preview', status: 'ported', notes: 'Preview service untouched.' },
       { pillar: '12', name: 'Release & Deployment', status: 'implemented', notes: 'release.build DAG (readiness → flutter build → artifact), artifact listing with sha256 manifests, GitHub branch/PR sync.' },
       { pillar: '13', name: 'Data & Persistence', status: 'implemented', notes: 'SQLite/WAL default + Postgres driver seam via FLUTTERFORGE_PLATFORM_DB_DRIVER=postgres; AES-256 vault for secrets; content-addressed revisions; audit chain.' },
@@ -465,8 +566,8 @@ add('GET', '/api/platform/capabilities', async ({ res, platform }) => {
     ],
     workflows: engines,
     agents: {
-      count: listAgents().length,
-      departments: listAgentsByDepartment().map((department) => ({
+      count: listChecks().length,
+      departments: listChecksByCategory().map((department) => ({
         department: department.department,
         label: department.label,
         weight: department.weight,
@@ -563,15 +664,15 @@ add('GET', '/api/platform/agents', async ({ res, principal }) => {
   requirePermission(principal, 'project:read');
   sendJson(res, 200, {
     ok: true,
-    count: listAgents().length,
-    agents: listAgents(),
-    departments: listAgentsByDepartment(),
+    count: listChecks().length,
+    agents: listChecks(),
+    departments: listChecksByCategory(),
   });
 });
 
 add('GET', '/api/platform/agents/:agentId', async ({ res, params, principal }) => {
   requirePermission(principal, 'project:read');
-  const agent = getAgentDefinition(params.agentId);
+  const agent = getCheckDefinition(params.agentId);
   if (!agent) {
     throw new PlatformError({ code: 'AGENT_NOT_FOUND', message: `No agent with id "${params.agentId}".`, statusCode: 404 });
   }
@@ -604,7 +705,7 @@ add('POST', '/api/platform/agents/review', async ({ res, body, platform, princip
 
   let scorecard;
   try {
-    scorecard = await runAgentCorps(createReviewContext({ projectId, files: normalised, prompt }), {
+    scorecard = await runChecks(createReviewContext({ projectId, files: normalised, prompt }), {
       agentIds: parseAgentIds(body?.agentIds),
       excludeInfo: body?.excludeInfo === true,
     });
@@ -648,7 +749,7 @@ add('POST', '/api/platform/projects/:projectId/agents/review', async ({ res, par
 
   let scorecard;
   try {
-    scorecard = await runAgentCorps(createReviewContext({
+    scorecard = await runChecks(createReviewContext({
       projectId: params.projectId,
       files,
       prompt: typeof body?.prompt === 'string' ? body.prompt : undefined,

@@ -1,3 +1,4 @@
+import { MessageResponse } from '@/components/ai-elements/message';
 import type { ReactNode } from 'react';
 import { Bot, Square } from 'lucide-react';
 import './chat.css';
@@ -133,7 +134,7 @@ export function ChatMessage({
           )}
         </div>
         <div className={`chat-bubble ${isUser ? 'chat-bubble--user' : 'chat-bubble--assistant'}`}>
-          {content !== '' && <p className="chat-content">{content}</p>}
+          {content !== '' && (isAssistant ? <MessageResponse>{content}</MessageResponse> : <p className="chat-content">{content}</p>)}
           {isStreaming && (
             <span className="chat-streaming" aria-hidden="true">
               <span className="chat-streaming-dot" />

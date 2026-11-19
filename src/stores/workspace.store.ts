@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type WorkspaceView = 'ai-builder' | 'generation' | 'preview' | 'files' | 'dependencies' | 'code' | 'terminal' | 'versions' | 'revisions' | 'settings' | 'export';
+type WorkspaceView = 'ai-builder' | 'generator' | 'generation' | 'preview' | 'files' | 'dependencies' | 'code' | 'terminal' | 'versions' | 'revisions' | 'settings' | 'export';
 
 interface WorkspaceState {
   activeView: WorkspaceView;

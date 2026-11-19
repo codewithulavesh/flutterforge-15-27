@@ -435,6 +435,8 @@ describe('DockerSandboxRunner (argv construction via injected exec hook)', () =>
     const workdirFlag = captured.indexOf('-w');
     assert.equal(captured[workdirFlag + 1], '/workspace');
 
+    assert.ok(!captured.some(arg => /^(PATH|HOME|PUB_CACHE|FLUTTER_ROOT)=/.test(arg)), 'host paths must not override container paths');
+
     // No shell: image and command travel as discrete argv entries at the tail.
     const imageIndex = captured.indexOf('flutterforge/sandbox:test');
     assert.ok(imageIndex > 0);
